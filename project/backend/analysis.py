@@ -1,3 +1,7 @@
+# Struktur proyek backend + frontend
+
+# === backend/analysis.py ===
+# Modul fungsi reusable untuk analisis passing network
 import json
 import requests
 import networkx as nx
@@ -61,16 +65,35 @@ def build_passing_graph(events, starting_players, threshold=1):
     return G, positions, accuracy
 
 def compute_realistic_cost(G, positions, accuracy):
+    clustering = nx.clustering(G.to_undirected())
+    pagerank = nx.pagerank(G)
+
+    alpha, beta, gamma, delta, epsilon = 1.0, 1.0, 1.0, 0.5, 0.5
+
     for u, v in G.edges():
         freq = G[u][v]['weight']
         freq_cost = 1 / (freq + 1e-6)
+
         dist = 0.5
         if u in positions and v in positions:
             x1, y1 = positions[u]
             x2, y2 = positions[v]
             dist = math.hypot(x2 - x1, y2 - y1) / 100
+
         acc_penalty = 1 - accuracy.get(u, 0.8)
-        G[u][v]['cost'] = freq_cost + dist + acc_penalty
+        cluster_penalty = 1 / (clustering.get(u, 0.5) + 1e-6)
+        pagerank_target = 1 / (pagerank.get(v, 0.1) + 1e-6)
+
+        cost = (
+            alpha * freq_cost +
+            beta * dist +
+            gamma * acc_penalty +
+            delta * cluster_penalty +
+            epsilon * pagerank_target
+        )
+
+        G[u][v]['cost'] = cost
+
     return G
 
 def get_shortest_path(G, source, target):
@@ -89,4 +112,11 @@ def analyze_centralities(G):
         'betweenness': nx.betweenness_centrality(G),
         'closeness': nx.closeness_centrality(G),
         'pagerank': nx.pagerank(G)
+    }
+
+def get_url_mapping():
+    return {
+        "Barcelona vs Atletico Madrid": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773372.json",
+        "Barcelona vs Madrid": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773585.json",
+        "Barcelona vs Seville": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773672.json"
     }
