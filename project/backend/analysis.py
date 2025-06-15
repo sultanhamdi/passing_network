@@ -1,7 +1,3 @@
-# Struktur proyek backend + frontend
-
-# === backend/analysis.py ===
-# Modul fungsi reusable untuk analisis passing network
 import json
 import requests
 import networkx as nx
