@@ -1,167 +1,111 @@
-# backend/simulator.py
-
-import os
-from analysis import (
-    load_event_data,
-    extract_starting_players,
-    build_passing_graph,
-    compute_realistic_cost,
-    get_shortest_path,
-    analyze_centralities
-)
+import json
+import requests
 import networkx as nx
-import matplotlib.pyplot as plt
-from mplsoccer import Pitch
+import math
+from collections import defaultdict
 
-def detect_communities(G):
-    try:
-        from networkx.algorithms.community import girvan_newman
-        communities = next(girvan_newman(G.to_undirected()))
-        return [list(c) for c in communities]
-    except ImportError:
-        return []
+def load_event_data(file_path):
+    with open(file_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-def draw_pitch_with_positions(pos, G, title="Visualisasi Posisi Pemain"):
-    pitch = Pitch(pitch_type='statsbomb', pitch_color='#a8bc95', line_color='white', stripe=True, stripe_color='#c2d59d')
-    fig, ax = pitch.draw(figsize=(14, 8))
-    fig.set_facecolor('#a8bc95')
+def load_event_data_from_url(url):
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
 
-    for player, (x, y) in pos.items():
-        pitch.scatter(x, y, ax=ax, s=500, color='orange', edgecolors='black', zorder=3)
-        ax.text(x, y, player.split()[0], ha='center', va='center', fontsize=10, color='white', zorder=4)
+def extract_starting_players(events, team_name="Barcelona"):
+    players = set()
+    positions = {}
+    for e in events:
+        if e.get("type", {}).get("name") == "Starting XI" and e.get("team", {}).get("name") == team_name:
+            for p in e["tactics"]["lineup"]:
+                name = p["player"]["name"]
+                players.add(name)
+                positions[name] = p["position"]["name"]
+    return players, positions
+
+def build_passing_graph(events, starting_players, threshold=1):
+    passes = defaultdict(int)
+    location_data = defaultdict(list)
+    pass_total = defaultdict(int)
+    pass_success = defaultdict(int)
+
+    for e in events:
+        if e.get("type", {}).get("name") != "Pass": continue
+        if e.get("team", {}).get("name") != "Barcelona": continue
+        if "recipient" not in e.get("pass", {}): continue
+
+        passer = e["player"]["name"]
+        receiver = e["pass"]["recipient"]["name"]
+        if passer in starting_players and receiver in starting_players:
+            passes[(passer, receiver)] += 1
+            pass_total[passer] += 1
+            if e.get("pass", {}).get("outcome") is None:
+                pass_success[passer] += 1
+                if e.get("location"):
+                    location_data[passer].append(e["location"])
+                    location_data[receiver].append(e["pass"]["end_location"])
+
+    G = nx.DiGraph()
+    for (u, v), w in passes.items():
+        if w >= threshold:
+            G.add_edge(u, v, weight=w)
+
+    positions = {
+        p: (sum(x for x, y in locs) / len(locs), sum(y for x, y in locs) / len(locs))
+        for p, locs in location_data.items() if locs
+    }
+
+    accuracy = {p: pass_success[p] / pass_total[p] for p in pass_total if pass_total[p] > 0}
+
+    return G, positions, accuracy
+
+def compute_realistic_cost(G, positions, accuracy):
+    clustering = nx.clustering(G.to_undirected())
+    pagerank = nx.pagerank(G)
+
+    alpha, beta, gamma, delta, epsilon = 1.0, 1.0, 1.0, 0.5, 0.5
 
     for u, v in G.edges():
-        if u in pos and v in pos:
-            x1, y1 = pos[u]
-            x2, y2 = pos[v]
-            pitch.arrows(x1, y1, x2, y2, ax=ax, color='black', width=2, headwidth=5, zorder=2)
+        freq = G[u][v]['weight']
+        freq_cost = 1 / (freq + 1e-6)
 
-    ax.set_title(title, fontsize=16, color='white')
-    plt.tight_layout()
-    plt.show()
+        dist = 0.5
+        if u in positions and v in positions:
+            x1, y1 = positions[u]
+            x2, y2 = positions[v]
+            dist = math.hypot(x2 - x1, y2 - y1) / 100
 
-def main():
-    base_path = os.path.dirname(__file__)
-    data_dir = os.path.join(base_path, "../data")
-    match_files = [f for f in os.listdir(data_dir) if f.endswith(".json")]
+        acc_penalty = 1 - accuracy.get(u, 0.8)
+        cluster_penalty = 1 / (clustering.get(u, 0.5) + 1e-6)
+        pagerank_target = 1 / (pagerank.get(v, 0.1) + 1e-6)
 
-    print("\n📁 Daftar Pertandingan yang Tersedia:")
-    for i, file in enumerate(match_files):
-        print(f"{i+1}. {file}")
+        cost = (
+            alpha * freq_cost +
+            beta * dist +
+            gamma * acc_penalty +
+            delta * cluster_penalty +
+            epsilon * pagerank_target
+        )
 
+        G[u][v]['cost'] = cost
+
+    return G
+
+def get_shortest_path(G, source, target):
     try:
-        match_choice = int(input("\nPilih nomor file pertandingan: ")) - 1
-        match_file = os.path.join(data_dir, match_files[match_choice])
-    except (ValueError, IndexError):
-        print("\n❌ Input tidak valid.")
-        return
+        path = nx.shortest_path(G, source=source, target=target, weight='cost')
+        cost = sum(G[u][v]['cost'] for u, v in zip(path[:-1], path[1:]))
+        return path, cost
+    except nx.NetworkXNoPath:
+        return [], float('inf')
 
-    print("\n📦 Loading match data...")
-    events = load_event_data(match_file)
-
-    teams = sorted({e['team']['name'] for e in events if 'team' in e})
-    teams = list(dict.fromkeys(teams))
-    print("\n🔍 Tim yang tersedia dalam match:")
-    for i, t in enumerate(teams):
-        print(f"{i+1}. {t}")
-
-    try:
-        team_idx = int(input("\nPilih tim yang akan dianalisis: ")) - 1
-        team_name = teams[team_idx]
-    except (ValueError, IndexError):
-        print("\n❌ Input tim tidak valid.")
-        return
-
-    players, _ = extract_starting_players(events, team_name)
-
-    print("\n👥 Starting XI:")
-    player_list = sorted(players)
-    for i, p in enumerate(player_list):
-        print(f"{i+1}. {p}")
-
-    try:
-        idx_start = int(input("\nPilih nomor pemain awal: ")) - 1
-        idx_end = int(input("Pilih nomor pemain tujuan: ")) - 1
-        source = player_list[idx_start]
-        target = player_list[idx_end]
-    except (ValueError, IndexError):
-        print("\n❌ Input tidak valid.")
-        return
-
-    print("\n📊 Membuat graf passing...")
-    G, pos, acc = build_passing_graph(events, players, threshold=1)
-    G = compute_realistic_cost(G, pos, acc)
-
-    print(f"🔍 Mencari jalur optimal dari {source} ke {target}...")
-    path, cost = get_shortest_path(G, source, target)
-
-    if path:
-        print("\n✅ Jalur ditemukan:")
-        for i, p in enumerate(path):
-            print(f"{i+1}. {p}")
-        print(f"Total heuristic cost: {cost:.4f}")
-    else:
-        print("\n⚠️ Tidak ada jalur tersedia.")
-
-    print(f"\n🎯 Ranking Target Umpan dari {source}:")
-    if source in G:
-        neighbors = G[source]
-        ranked = sorted(neighbors.items(), key=lambda item: item[1]['weight'], reverse=True)
-        for i, (target_player, data) in enumerate(ranked):
-            print(f"  {i+1}. {target_player} (jumlah passing: {data['weight']})")
-    else:
-        print("  Pemain tidak memiliki data passing keluar.")
-
-    print("\n📈 Analisis Centrality:")
-    centralities = analyze_centralities(G)
-    top_degree = max(centralities['degree'], key=centralities['degree'].get)
-    top_betweenness = max(centralities['betweenness'], key=centralities['betweenness'].get)
-    top_pagerank = max(centralities['pagerank'], key=centralities['pagerank'].get)
-
-    print(f"- Degree Centrality Tertinggi: {top_degree}")
-    print(f"- Betweenness Centrality Tertinggi: {top_betweenness}")
-    print(f"- PageRank Tertinggi: {top_pagerank}")
-
-    clustering = nx.clustering(G.to_undirected())
-    top_clustering = max(clustering, key=clustering.get)
-    avg_clustering = sum(clustering.values()) / len(clustering) if clustering else 0
-    print(f"- Clustering Coefficient Tertinggi: {top_clustering} ({clustering[top_clustering]:.2f})")
-    print(f"- Rata-rata Clustering Coefficient: {avg_clustering:.2f}")
-
-    print("\n🔗 Deteksi Komunitas (Clustering):")
-    communities = detect_communities(G)
-    for i, c in enumerate(communities):
-        print(f"  Komunitas {i+1}: {', '.join(sorted(c))}")
-
-    print("\n🧪 Simulasi: Dampak Penghapusan Pemain")
-    try:
-        remove_idx = int(input("Pilih nomor pemain yang ingin dihapus dari graf: ")) - 1
-        removed_player = player_list[remove_idx]
-        G_removed = G.copy()
-        G_removed.remove_node(removed_player)
-        new_path, new_cost = get_shortest_path(G_removed, source, target)
-
-        print(f"\n📉 Setelah menghapus {removed_player}:")
-        if new_path:
-            print(f"  Jalur baru ditemukan dengan total cost {new_cost:.4f}:")
-            for i, p in enumerate(new_path):
-                print(f"  {i+1}. {p}")
-        else:
-            print("  Tidak ada jalur baru yang tersedia.")
-    except (ValueError, IndexError, nx.NetworkXError):
-        print("  ❌ Input atau penghapusan tidak valid.")
-
-    print("\n🔁 Simulasi: Tukar Posisi Dua Pemain")
-    try:
-        swap_a = int(input("Masukkan nomor pemain pertama: ")) - 1
-        swap_b = int(input("Masukkan nomor pemain kedua: ")) - 1
-        a, b = player_list[swap_a], player_list[swap_b]
-        pos_swapped = pos.copy()
-        pos_swapped[a], pos_swapped[b] = pos_swapped[b], pos_swapped[a]
-        print(f"  Posisi {a} dan {b} ditukar. Menampilkan visualisasi...")
-        draw_pitch_with_positions(pos_swapped, G, title=f"Tukar Posisi: {a} <-> {b}")
-    except (ValueError, IndexError):
-        print("  ❌ Input tidak valid.")
-
-if __name__ == "__main__":
-    main()
+def analyze_centralities(G):
+    return {
+        'degree': dict(G.degree()),
+        'in_degree': dict(G.in_degree()),
+        'out_degree': dict(G.out_degree()),
+        'betweenness': nx.betweenness_centrality(G),
+        'closeness': nx.closeness_centrality(G),
+        'pagerank': nx.pagerank(G)
+    }
