@@ -1,4 +1,3 @@
-# simulator.py
 
 from analysis import (
     get_url_mapping,
@@ -7,7 +6,9 @@ from analysis import (
     build_passing_graph,
     compute_realistic_cost,
     get_shortest_path,
-    analyze_centralities
+    analyze_centralities,
+    build_attacking_weighted_graph,
+    build_defensive_weighted_graph
 )
 
 import networkx as nx
@@ -54,8 +55,28 @@ def main():
         print("❌ Input pemain tidak valid.")
         return
 
-    G, pos, acc = build_passing_graph(events, players, threshold=1)
-    G = compute_realistic_cost(G, pos, acc)
+    print("\n📊 Jenis passing network:")
+    print("1. Default (frekuensi)")
+    print("2. Attacking-weighted")
+    print("3. Defensive-weighted")
+
+    try:
+        mode = int(input("Pilih mode network: "))
+    except ValueError:
+        mode = 1
+
+    if mode == 1:
+        G, pos, acc = build_passing_graph(events, players, threshold=1)
+        G = compute_realistic_cost(G, pos, acc)
+    elif mode == 2:
+        G = build_attacking_weighted_graph(events, players, threshold=1)
+    elif mode == 3:
+        G = build_defensive_weighted_graph(events, players, threshold=1)
+    else:
+        print("❌ Mode tidak dikenali, menggunakan default.")
+        G, pos, acc = build_passing_graph(events, players, threshold=1)
+        G = compute_realistic_cost(G, pos, acc)
+
     path, cost = get_shortest_path(G, source, target)
 
     print(f"\n🔍 Shortest path dari {source} ke {target}:")
@@ -72,7 +93,6 @@ def main():
         top = max(central[k], key=central[k].get)
         print(f"- {k.capitalize()} tertinggi: {top} ({central[k][top]:.4f})")
 
-    
     print("\n🔗 Deteksi Komunitas (Clustering via Girvan-Newman):")
     try:
         from networkx.algorithms.community import girvan_newman
