@@ -1,17 +1,15 @@
-# Struktur proyek backend + frontend
-
-# === backend/analysis.py ===
-# Modul fungsi reusable untuk analisis passing network
 import json
 import requests
 import networkx as nx
 import math
 from collections import defaultdict
 
+# untuk load file local (kalo ada)
 def load_event_data(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+# load file data dari urls (hugging face)
 def load_event_data_from_url(url):
     response = requests.get(url)
     response.raise_for_status()
@@ -63,6 +61,54 @@ def build_passing_graph(events, starting_players, threshold=1):
     accuracy = {p: pass_success[p] / pass_total[p] for p in pass_total if pass_total[p] > 0}
 
     return G, positions, accuracy
+
+def build_attacking_weighted_graph(events, starting_players, threshold=1):
+    passes = defaultdict(float)
+
+    for e in events:
+        if e.get("type", {}).get("name") != "Pass": continue
+        if e.get("team", {}).get("name") != "Barcelona": continue
+        if "recipient" not in e.get("pass", {}): continue
+
+        passer = e["player"]["name"]
+        receiver = e["pass"]["recipient"]["name"]
+        if passer in starting_players and receiver in starting_players:
+            loc_start = e.get("location", [0, 0])
+            loc_end = e.get("pass", {}).get("end_location", [0, 0])
+            y_gain = loc_end[1] - loc_start[1]
+            value = max(y_gain, 0)
+            passes[(passer, receiver)] += value
+
+    G = nx.DiGraph()
+    for (u, v), weight in passes.items():
+        if weight >= threshold:
+            G.add_edge(u, v, weight=weight)
+
+    return G
+
+def build_defensive_weighted_graph(events, starting_players, threshold=1):
+    passes = defaultdict(float)
+
+    for e in events:
+        if e.get("type", {}).get("name") != "Pass": continue
+        if e.get("team", {}).get("name") != "Barcelona": continue
+        if "recipient" not in e.get("pass", {}): continue
+
+        passer = e["player"]["name"]
+        receiver = e["pass"]["recipient"]["name"]
+        if passer in starting_players and receiver in starting_players:
+            loc_start = e.get("location", [0, 0])
+            loc_end = e.get("pass", {}).get("end_location", [0, 0])
+            y_loss = loc_start[1] - loc_end[1]
+            value = max(y_loss, 0)
+            passes[(passer, receiver)] += value
+
+    G = nx.DiGraph()
+    for (u, v), weight in passes.items():
+        if weight >= threshold:
+            G.add_edge(u, v, weight=weight)
+
+    return G
 
 def compute_realistic_cost(G, positions, accuracy):
     clustering = nx.clustering(G.to_undirected())
