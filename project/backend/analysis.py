@@ -1,4 +1,9 @@
+# Struktur proyek backend + frontend
+
+# === backend/analysis.py ===
+# Modul fungsi reusable untuk analisis passing network
 import json
+import requests
 import networkx as nx
 import math
 from collections import defaultdict
@@ -6,6 +11,11 @@ from collections import defaultdict
 def load_event_data(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+def load_event_data_from_url(url):
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
 
 def extract_starting_players(events, team_name="Barcelona"):
     players = set()
