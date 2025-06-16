@@ -26,7 +26,7 @@ def extract_starting_players(events, team_name="Barcelona"):
                 positions[name] = p["position"]["name"]
     return players, positions
 
-def build_passing_graph(events, starting_players, threshold=1):
+def build_passing_graph(events, starting_players, team_name="Barcelona", threshold=1):
     passes = defaultdict(int)
     location_data = defaultdict(list)
     pass_total = defaultdict(int)
@@ -34,7 +34,7 @@ def build_passing_graph(events, starting_players, threshold=1):
 
     for e in events:
         if e.get("type", {}).get("name") != "Pass": continue
-        if e.get("team", {}).get("name") != "Barcelona": continue
+        if e.get("team", {}).get("name") != team_name: continue
         if "recipient" not in e.get("pass", {}): continue
 
         passer = e["player"]["name"]
@@ -62,12 +62,12 @@ def build_passing_graph(events, starting_players, threshold=1):
 
     return G, positions, accuracy
 
-def build_attacking_weighted_graph(events, starting_players, threshold=1):
+def build_attacking_weighted_graph(events, starting_players, team_name="Barcelona", threshold=1):
     passes = defaultdict(float)
 
     for e in events:
         if e.get("type", {}).get("name") != "Pass": continue
-        if e.get("team", {}).get("name") != "Barcelona": continue
+        if e.get("team", {}).get("name") != team_name: continue
         if "recipient" not in e.get("pass", {}): continue
 
         passer = e["player"]["name"]
@@ -86,12 +86,12 @@ def build_attacking_weighted_graph(events, starting_players, threshold=1):
 
     return G
 
-def build_defensive_weighted_graph(events, starting_players, threshold=1):
+def build_defensive_weighted_graph(events, starting_players, team_name="Barcelona", threshold=1):
     passes = defaultdict(float)
 
     for e in events:
         if e.get("type", {}).get("name") != "Pass": continue
-        if e.get("team", {}).get("name") != "Barcelona": continue
+        if e.get("team", {}).get("name") != team_name: continue
         if "recipient" not in e.get("pass", {}): continue
 
         passer = e["player"]["name"]
