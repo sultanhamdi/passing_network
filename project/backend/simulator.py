@@ -1,3 +1,4 @@
+# simulator.py
 
 from analysis import (
     get_url_mapping,
@@ -66,15 +67,15 @@ def main():
         mode = 1
 
     if mode == 1:
-        G, pos, acc = build_passing_graph(events, players, threshold=1)
+        G, pos, acc = build_passing_graph(events, players, team_name=team_name, threshold=1)
         G = compute_realistic_cost(G, pos, acc)
     elif mode == 2:
-        G = build_attacking_weighted_graph(events, players, threshold=1)
+        G = build_attacking_weighted_graph(events, players, team_name=team_name, threshold=1)
     elif mode == 3:
-        G = build_defensive_weighted_graph(events, players, threshold=1)
+        G = build_defensive_weighted_graph(events, players, team_name=team_name, threshold=1)
     else:
         print("❌ Mode tidak dikenali, menggunakan default.")
-        G, pos, acc = build_passing_graph(events, players, threshold=1)
+        G, pos, acc = build_passing_graph(events, players, team_name=team_name, threshold=1)
         G = compute_realistic_cost(G, pos, acc)
 
     path, cost = get_shortest_path(G, source, target)
