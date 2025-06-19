@@ -1,4 +1,3 @@
-# simulator.py
 
 from analysis import (
     get_url_mapping,
@@ -13,6 +12,8 @@ from analysis import (
 )
 
 import networkx as nx
+import community as community_louvain  # Louvain clustering
+from collections import defaultdict
 
 def main():
     urls = get_url_mapping()
@@ -84,7 +85,7 @@ def main():
     if path:
         for i, p in enumerate(path):
             print(f"{i+1}. {p}")
-        print(f"Total heuristic cost: {cost:.4f}")
+        print(f"Total cost: {cost:.4f}")
     else:
         print("Tidak ditemukan jalur.")
 
@@ -94,12 +95,14 @@ def main():
         top = max(central[k], key=central[k].get)
         print(f"- {k.capitalize()} tertinggi: {top} ({central[k][top]:.4f})")
 
-    print("\n🔗 Deteksi Komunitas (Clustering via Girvan-Newman):")
+    print("\n🔗 Deteksi Komunitas (Clustering via Louvain):")
     try:
-        from networkx.algorithms.community import girvan_newman
-        communities = next(girvan_newman(G.to_undirected()))
-        for i, comm in enumerate(communities):
-            print(f"  Komunitas {i+1}: {', '.join(sorted(comm))}")
+        partition = community_louvain.best_partition(G.to_undirected())
+        comm_map = defaultdict(list)
+        for player, group in partition.items():
+            comm_map[group].append(player)
+        for i, comm in enumerate(comm_map.values(), 1):
+            print(f"  Komunitas {i}: {', '.join(sorted(comm))}")
     except Exception as e:
         print(f"  ❌ Gagal mendeteksi komunitas: {e}")
 

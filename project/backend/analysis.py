@@ -164,5 +164,6 @@ def get_url_mapping():
     return {
         "Barcelona vs Atletico Madrid": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773372.json",
         "Barcelona vs Madrid": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773585.json",
-        "Barcelona vs Seville": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773672.json"
+        "Barcelona vs Seville": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773672.json",
+        "Spain vs Russia" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/7582.json"
     }
