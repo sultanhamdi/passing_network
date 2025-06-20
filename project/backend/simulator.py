@@ -30,7 +30,13 @@ def main():
         return
 
     events = load_event_data_from_url(match_url)
-    teams = sorted({e['team']['name'] for e in events if 'team' in e})
+    teams = list()
+    # Ambil nama kedua tim dari lineup AJA
+    for e in events:
+        if e['type']['name'] == 'Starting XI':
+            teams.append(e['team']['name'])
+            if len(teams) == 2:
+                break
     print("\n🔍 Tim yang tersedia:")
     for i, t in enumerate(teams):
         print(f"{i+1}. {t}")
