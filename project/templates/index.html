@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>⚽ Passing Network Visualizer</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <h1>⚽ Passing Network Analyzer</h1>
+
+  <div id="controls">
+    <label>Match:
+      <select id="matchSelect"></select>
+    </label>
+
+    <label>Team:
+      <select id="teamSelect"></select>
+    </label>
+
+    <label>Graph Mode:
+      <select id="graphMode">
+        <option value="1">Default</option>
+        <option value="2">Attacking</option>
+        <option value="3">Defensive</option>
+      </select>
+    </label>
+
+    <label>From:
+      <select id="sourcePlayer"></select>
+    </label>
+
+    <label>To:
+      <select id="targetPlayer"></select>
+    </label>
+
+    <button id="simulatePath">Simulasikan Path</button>
+  </div>
+
+  <div id="graph-container">
+    <!-- SVG Field -->
+    <svg id="soccer-field" width="1200" height="800" viewBox="0 0 1200 800">
+      <rect x="0" y="0" width="1200" height="800" fill="green" />
+      <rect x="0" y="0" width="1200" height="800" fill="none" stroke="white" stroke-width="5" />
+      <line x1="600" y1="0" x2="600" y2="800" stroke="white" stroke-width="4" />
+      <circle cx="600" cy="400" r="73" fill="none" stroke="white" stroke-width="4" />
+      <circle cx="600" cy="400" r="2" fill="white" />
+      <rect x="0" y="260" width="120" height="280" fill="none" stroke="white" stroke-width="4" />
+      <rect x="0" y="320" width="40" height="160" fill="none" stroke="white" stroke-width="4" />
+      <circle cx="100" cy="400" r="2" fill="white" />
+      <rect x="1080" y="260" width="120" height="280" fill="none" stroke="white" stroke-width="4" />
+      <rect x="1160" y="320" width="40" height="160" fill="none" stroke="white" stroke-width="4" />
+      <circle cx="1100" cy="400" r="2" fill="white" />
+      <path d="M0,0 A20,20 0 0,1 20,20" fill="none" stroke="white" stroke-width="4"/>
+      <path d="M1200,0 A20,20 0 0,0 1180,20" fill="none" stroke="white" stroke-width="4"/>
+      <path d="M0,800 A20,20 0 0,0 20,780" fill="none" stroke="white" stroke-width="4"/>
+      <path d="M1200,800 A20,20 0 0,1 1180,780" fill="none" stroke="white" stroke-width="4"/>
+    </svg>
+
+    <!-- Tempat untuk node dan edge -->
+    <div id="graph"></div>
+  </div>
+
+  <script src="/static/js/main.js"></script>
+</body>
+</html>

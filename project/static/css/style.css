@@ -1,0 +1,107 @@
+body {
+  font-family: sans-serif;
+  margin: 20px;
+  background-color: #f5f5f5;
+}
+
+#controls {
+  margin-bottom: 20px;
+}
+
+#graph-container {
+  position: relative;
+  width: 1200px;
+  height: 800px;
+  border: 2px solid #ccc;
+  background-color: green;
+}
+
+#soccer-field {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+#graph {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+}
+
+.player-node {
+  position: absolute;
+  width: 80px;
+  height: 30px;
+  background-color: #ffcc00;
+  color: black;
+  border-radius: 15px;
+  text-align: center;
+  line-height: 30px;
+  font-weight: bold;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  transition: transform 0.3s ease;
+}
+
+.player-node:hover {
+  transform: translate(-50%, -50%) scale(1.2);
+}
+
+.edge-line {
+  position: absolute;
+  height: 4px;
+  background-color: white;
+  transform-origin: 0 50%;
+  z-index: 2;
+  opacity: 0.8;
+}
+
+@keyframes scaleIn {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+
+.player-node {
+  position: absolute;
+  width: 80px;
+  height: 30px;
+  background-color: #ffcc00;
+  color: black;
+  border-radius: 15px;
+  text-align: center;
+  line-height: 30px;
+  font-weight: bold;
+  transform: translate(-50%, -50%) scale(1);
+  z-index: 3;
+  transition: transform 0.3s ease;
+  animation: scaleIn 0.3s ease forwards;
+  opacity: 0;
+}
+
+.edge-line {
+  position: absolute;
+  height: 4px;
+  background-color: white;
+  transform-origin: 0 50%;
+  z-index: 2;
+  opacity: 0;
+  animation: drawEdge 0.4s ease forwards;
+}
+
+@keyframes drawEdge {
+  0% {
+    width: 0;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0.8;
+  }
+}
