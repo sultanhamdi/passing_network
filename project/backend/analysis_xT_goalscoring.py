@@ -239,7 +239,7 @@ def xT_based_goal_pathfinding(events, starting_players, origin_player, team_name
         List of dicts containing path info, sorted by total xT gain
     """
     # Load xT matrix
-    xT_matrix = np.load("barcelona_xt.npy")
+    xT_matrix = np.load("xT_map.npy")
     
     # Validate origin player
     if origin_player not in starting_players:
@@ -388,7 +388,7 @@ print(build_attacking_weighted_graph(events, players, team_name="Barcelona"))
 print(build_defensive_weighted_graph(events, players, team_name="Barcelona"))
 # Cek visualisasi passnet di project\backend\analysis_xT.py
 
-optimal_paths = xT_based_goal_pathfinding(events, players, origin_player="Sergino Dest", team_name="Barcelona")
+optimal_paths = xT_based_goal_pathfinding(events, players, origin_player="Philippe Coutinho Correia", team_name="Barcelona")
 
 # Print results
 print("\nTop Optimal xT Paths:")
@@ -398,26 +398,3 @@ for i, path in enumerate(optimal_paths, 1):
     print(f"Total xT gain: {path['total_xT_gain']:.3f}")
     print(f"xG potential in final moves: {path['xG_potential']:.3f}")
     print("Positions:", ["(%d,%d)" % (x,y) for x,y in path['positions']])
-
-# TODO: EDIT HERE xT
-def xT_based_goal_pathfinding(_):
-    # NOTE: cara hitung xT (position-based):
-    # xT di x,y =
-    # (potensi shoot di x,y * potensi gol dari x,y)
-    # + (potensi move di x,y * sigma potensi move ke semua area lapangan * xT di x,y)
-    # yes, ini ada rekursi xT di x,y (prediksi 5 move ke depan)
-    
-    # problem
-    # kan xT ada potensi gol dari x,y, aneh ya kalo potensi gol dari x,y di avg position player?
-    # avg position kan kemungkinan pada dari posisi yg ga cocok buat shooting
-    # masalahnya kan bisa gerak ke posisi yg bagus buat shoot dan dihitung dlm xT
-    # btw TODO: avg position kita hitungnya gmn?
-        # mending ambil pass & shot aja
-    # mending hitung pake rata2 xG player per 90 aja?
-    # OR, which player has the best average position? (tetep pake avg position)
-
-    # SOLN: pake xG per 90
-    # NOTE: xG setiap shot sudah ada di dataset statsbomb
-    # XXX: Optional: return bareng xT map utk kasi tau posisi terbaik depan gawang
-
-    return #temp

@@ -39,7 +39,7 @@ def get_grid_cell(x, y, pitch_length=120, pitch_width=80, grid_length=16, grid_w
     return min(i, grid_length-1), min(j, grid_width-1)
 
 def compute_pass_xT_gain_avg(events, starting_players, team_name="Barcelona"):
-    xT_matrix = np.load("barcelona_xt.npy")
+    xT_matrix = np.load("xT_map.npy")
     pass_counts = defaultdict(lambda: defaultdict(int))
     xT_total = defaultdict(lambda: defaultdict(float))
 

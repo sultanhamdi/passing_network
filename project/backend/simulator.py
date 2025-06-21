@@ -1,4 +1,3 @@
-
 from analysis import (
     get_url_mapping,
     load_event_data_from_url,
@@ -8,7 +7,8 @@ from analysis import (
     get_shortest_path,
     analyze_centralities,
     build_attacking_weighted_graph,
-    build_defensive_weighted_graph
+    build_defensive_weighted_graph,
+    visualize_passing_graph  # ✅ Tambahan
 )
 
 import networkx as nx
@@ -30,13 +30,7 @@ def main():
         return
 
     events = load_event_data_from_url(match_url)
-    teams = list()
-    # Ambil nama kedua tim dari lineup AJA
-    for e in events:
-        if e['type']['name'] == 'Starting XI':
-            teams.append(e['team']['name'])
-            if len(teams) == 2:
-                break
+    teams = sorted({e['team']['name'] for e in events if 'team' in e})
     print("\n🔍 Tim yang tersedia:")
     for i, t in enumerate(teams):
         print(f"{i+1}. {t}")
@@ -54,15 +48,6 @@ def main():
     for i, p in enumerate(player_list):
         print(f"{i+1}. {p}")
 
-    try:
-        src = int(input("\nPilih pemain awal (nomor): ")) - 1
-        tgt = int(input("Pilih pemain tujuan (nomor): ")) - 1
-        source = player_list[src]
-        target = player_list[tgt]
-    except (ValueError, IndexError):
-        print("❌ Input pemain tidak valid.")
-        return
-
     print("\n📊 Jenis passing network:")
     print("1. Default (frekuensi)")
     print("2. Attacking-weighted")
@@ -76,14 +61,29 @@ def main():
     if mode == 1:
         G, pos, acc = build_passing_graph(events, players, team_name=team_name, threshold=1)
         G = compute_realistic_cost(G, pos, acc)
+        visualize_passing_graph(G, pos, title=f"{team_name} Passing Network")
     elif mode == 2:
         G = build_attacking_weighted_graph(events, players, team_name=team_name, threshold=1)
+        dummy_pos = {p: (i * 10, 40) for i, p in enumerate(G.nodes())}
+        visualize_passing_graph(G, dummy_pos, title=f"{team_name} Attacking Network")
     elif mode == 3:
         G = build_defensive_weighted_graph(events, players, team_name=team_name, threshold=1)
+        dummy_pos = {p: (i * 10, 40) for i, p in enumerate(G.nodes())}
+        visualize_passing_graph(G, dummy_pos, title=f"{team_name} Defensive Network")
     else:
         print("❌ Mode tidak dikenali, menggunakan default.")
         G, pos, acc = build_passing_graph(events, players, team_name=team_name, threshold=1)
         G = compute_realistic_cost(G, pos, acc)
+        visualize_passing_graph(G, pos, title=f"{team_name} Passing Network")
+
+    try:
+        src = int(input("\nPilih pemain awal (nomor): ")) - 1
+        tgt = int(input("Pilih pemain tujuan (nomor): ")) - 1
+        source = player_list[src]
+        target = player_list[tgt]
+    except (ValueError, IndexError):
+        print("❌ Input pemain tidak valid.")
+        return
 
     path, cost = get_shortest_path(G, source, target)
 
