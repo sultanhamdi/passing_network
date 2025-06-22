@@ -103,33 +103,88 @@ def build_passing_graph_with_xt(events, starting_players, team_name="Barcelona")
     return basic_g, attack_g, defense_g, positions
 
 # 3. Visualization with mplsoccer
-def draw_network(G, positions, title="Passing Network", edge_weights=True, figsize=(12, 8)):
+from matplotlib.patches import FancyArrowPatch
+
+def draw_network(G, positions, title="Passing Network", figsize=(12, 8)):
+    """
+    G          : networkx.DiGraph (basic, attack, atau defense)
+    positions  : dict pemain -> (x,y) rata-rata di lapangan
+    title      : judul grafik (digunakan untuk mendeteksi mode)
+    figsize    : ukuran figure
+    """
+    # 1. Gambar lapangan
     pitch = Pitch(pitch_type='statsbomb', pitch_color='white', line_color='black')
     fig, ax = pitch.draw(figsize=figsize)
 
-    # Draw edges (passes)
+    # 2. Cari weight maksimum untuk skala ketebalan
+    max_w = max((G[u][v]['weight'] for u, v in G.edges()), default=1.0)
+    tl = title.lower()
+
+    # 3. Gambar edges
     for u, v in G.edges():
         x1, y1 = positions.get(u, (0, 0))
         x2, y2 = positions.get(v, (0, 0))
-        weight = G[u][v]['weight']
-        ax.annotate(
-            '', xy=(x2, y2), xytext=(x1, y1),
-            arrowprops=dict(
-                arrowstyle='->',
-                color='gray',
-                lw=max(1.5, weight),
-                alpha=0.6
+        w = G[u][v]['weight']
+        width = (w / max_w) * 5  # skala 0–5 px
+
+        # Pilih warna edge berdasarkan mode
+        if 'attack' in tl:
+            edge_color = "#0F6C2E"   # warna untuk attacking
+        elif 'defens' in tl:
+            edge_color = '#FF6B6B'   # warna untuk defensive
+        else:
+            edge_color = '#000000'   # warna untuk basic
+
+        # Jika attacking/defensive, pakai arrow; else garis biasa
+        if 'attack' in tl or 'defens' in tl:
+            arr = FancyArrowPatch(
+                (x1, y1), (x2, y2),
+                arrowstyle='-|>',                # kepala panah segitiga
+                mutation_scale=10 + width * 2,   # skala kepala
+                linewidth=width,                 # tebal batang
+                color=edge_color,
+                alpha=0.8,
+                zorder=2
             )
+            ax.add_patch(arr)
+        else:
+            ax.plot(
+                [x1, x2], [y1, y2],
+                color=edge_color,
+                linewidth=width,
+                alpha=0.6,
+                zorder=1
+            )
+
+    # 4. Gambar node (pemain)
+    node_color = "#2B2B67"   # isi warna node
+    outline_color = "#202D39"  # ganti ini sesuai keinginan
+    outline_width = 2          # tebal outline
+    for player, (x, y) in positions.items():
+        ax.scatter(
+            x, y,
+            s=1200,
+            color=node_color,
+            edgecolors=outline_color,   # ← ini outline color
+            linewidths=outline_width,   # ← ini ketebalan outline
+            zorder=3
         )
 
-    # Draw nodes (players)
-    for node, (x, y) in positions.items():
-        ax.scatter(x, y, s=1200, color='#1f78b4', edgecolors='black', zorder=3)
-        ax.text(x, y, node.split()[0], ha='center', va='center', fontsize=8, fontweight='bold', color='white')
+        # gambar nama di atas node
+        ax.text(
+            x, y,                      
+            player.split()[0],
+            ha='center', va='center',   # pusat horizontal & vertikal
+            fontsize=8, fontweight='bold',
+            color='white',
+            zorder=4
+        )
 
     ax.set_title(title, fontsize=16)
     plt.tight_layout()
     plt.show()
+
+
 
 # 4. Graph Cost, Path, Centralities
 def compute_realistic_cost(G, positions, accuracy):
@@ -161,7 +216,8 @@ def compute_realistic_cost(G, positions, accuracy):
 
     return G
 
-def get_shortest_path(G, source, target):
+def get_shortest_path(G, source, target, positions, accuracy):
+    G = compute_realistic_cost(G, positions, accuracy)
     try:
         path = nx.shortest_path(G, source=source, target=target, weight='cost')
         cost = sum(G[u][v]['cost'] for u, v in zip(path[:-1], path[1:]))

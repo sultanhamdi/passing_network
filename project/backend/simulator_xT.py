@@ -3,7 +3,6 @@ from analysis_merged_xT import (
     load_event_data_from_url,
     extract_starting_players,
     build_passing_graph_with_xt,
-    compute_realistic_cost,
     get_shortest_path,
     analyze_centralities,
     draw_network
@@ -90,8 +89,7 @@ def main():
 
     # Dummy akurasi (belum dihitung di xT)
     accuracy = {p: 0.9 for p in G.nodes()}
-    G = compute_realistic_cost(G, pos, accuracy)
-    path, cost = get_shortest_path(G, source, target)
+    path, cost = get_shortest_path(G, source, target, pos, accuracy)
 
     print(f"\n🔍 Shortest path dari {source} ke {target}:")
     if path:
