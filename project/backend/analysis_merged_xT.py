@@ -3,17 +3,24 @@ import requests
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import defaultdict
 import math
-from mplsoccer import Pitch  # Added for soccer pitch visualization
+from collections import defaultdict
+from mplsoccer import Pitch
+from matplotlib.patches import FancyArrowPatch
+import matplotlib.animation as animation
 
-# 1. Data Loading & Helper Functions
+# Data Loading & Helper Functions
+
 def get_url_mapping():
     return {
         "Barcelona vs Atletico Madrid": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773372.json",
         "Barcelona vs Real Madrid": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773585.json",
         "Barcelona vs Sevilla": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773672.json",
-        "Spain vs Russia": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/7582.json"
+        "Spain vs Russia": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/7582.json",
+        "Argentina vs France" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3869685.json",
+        "Liverpool vs Milan" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/2302764.json",
+        "Arsenal vs Manchester United":"https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3749246.json",
+        "Arsenal vs Leicster City" : "https://huggingface.co/datasets/sultanhamdi/passnet/blob/main/3749257.json"
     }
 
 def load_event_data_from_url(url):
@@ -39,7 +46,7 @@ def get_grid_cell(x, y, pitch_length=120, pitch_width=80, grid_length=16, grid_w
     j = int((y_norm / pitch_width) * grid_width)
     return min(i, grid_length-1), min(j, grid_width-1)
 
-# 2. xT-based Graph Construction
+# xT-based Graph Construction
 def compute_pass_xT_gain_avg(events, starting_players, team_name="Barcelona"):
     xT_matrix = np.load("xT_map.npy")
     pass_counts = defaultdict(lambda: defaultdict(int))
@@ -48,15 +55,17 @@ def compute_pass_xT_gain_avg(events, starting_players, team_name="Barcelona"):
     for e in events:
         if e.get("type", {}).get("name") != "Pass": continue
         if e.get("team", {}).get("name") != team_name: continue
-        if "recipient" not in e.get("pass", {}): continue
+        p = e.get("pass", {})
+        # hanya successful passes dan pastikan end_location ada
+        if "outcome" in p or "end_location" not in p or "recipient" not in p:
+            continue
 
         passer = e["player"]["name"]
-        receiver = e["pass"]["recipient"]["name"]
-
+        receiver = p["recipient"]["name"]
         if passer in starting_players and receiver in starting_players:
             pass_counts[passer][receiver] += 1
             grid_start = get_grid_cell(*e["location"])
-            grid_end = get_grid_cell(*e["pass"]["end_location"])
+            grid_end = get_grid_cell(*p["end_location"])
             xT_total[passer][receiver] += xT_matrix[grid_end] - xT_matrix[grid_start]
 
     xT_avg = defaultdict(lambda: defaultdict(float))
@@ -67,32 +76,52 @@ def compute_pass_xT_gain_avg(events, starting_players, team_name="Barcelona"):
                 xT_avg[passer][receiver] = xT_total[passer][receiver] / count
     return xT_avg
 
+
 def build_passing_graph_with_xt(events, starting_players, team_name="Barcelona"):
     xT_avg = compute_pass_xT_gain_avg(events, starting_players, team_name)
     location_data = defaultdict(list)
 
     for e in events:
-        if e.get("type", {}).get("name") == "Pass" and e.get("team", {}).get("name") == team_name:
-            if "location" in e and "recipient" in e.get("pass", {}):
-                passer = e["player"]["name"]
-                receiver = e["pass"]["recipient"]["name"]
-                if passer in starting_players and receiver in starting_players:
-                    location_data[passer].append(e["location"])
-                    location_data[receiver].append(e["pass"]["end_location"])
+        if e.get("type", {}).get("name") != "Pass": continue
+        if e.get("team", {}).get("name") != team_name: continue
+        p = e.get("pass", {})
+        # hanya successful passes dengan end_location
+        if "outcome" in p or "end_location" not in p or "recipient" not in p:
+            continue
+        if "location" not in e:
+            continue
+
+        passer = e["player"]["name"]
+        receiver = p["recipient"]["name"]
+        if passer in starting_players and receiver in starting_players:
+            location_data[passer].append(e["location"])
+            location_data[receiver].append(p["end_location"])
 
     positions = {
-        p: (sum(x for x, y in locs)/len(locs), sum(y for x, y in locs)/len(locs))
-        for p, locs in location_data.items() if locs
+        player: (
+            sum(x for x, y in locs) / len(locs),
+            sum(y for x, y in locs) / len(locs)
+        )
+        for player, locs in location_data.items() if locs
     }
 
     basic_g = nx.DiGraph()
     attack_g = nx.DiGraph()
     defense_g = nx.DiGraph()
 
-    for passer in xT_avg:
-        for receiver in xT_avg[passer]:
-            avg_xt = xT_avg[passer][receiver]
-            count = len([e for e in events if e.get("player", {}).get("name") == passer and e.get("pass", {}).get("recipient", {}).get("name") == receiver])
+    for passer, receivers in xT_avg.items():
+        for receiver, avg_xt in receivers.items():
+            # hitung jumlah successful passes
+            count = sum(
+                1 for e in events
+                if e.get("type", {}).get("name") == "Pass"
+                   and e.get("team", {}).get("name") == team_name
+                   and e["player"]["name"] == passer
+                   and e["pass"].get("recipient", {}).get("name") == receiver
+                   and "outcome" not in e["pass"]
+            )
+            if count == 0:
+                continue
 
             basic_g.add_edge(passer, receiver, weight=count)
             if avg_xt > 0:
@@ -102,91 +131,213 @@ def build_passing_graph_with_xt(events, starting_players, team_name="Barcelona")
 
     return basic_g, attack_g, defense_g, positions
 
-# 3. Visualization with mplsoccer
-from matplotlib.patches import FancyArrowPatch
+# Visualization Graph
 
 def draw_network(G, positions, title="Passing Network", figsize=(12, 8)):
-    """
-    G          : networkx.DiGraph (basic, attack, atau defense)
-    positions  : dict pemain -> (x,y) rata-rata di lapangan
-    title      : judul grafik (digunakan untuk mendeteksi mode)
-    figsize    : ukuran figure
-    """
-    # 1. Gambar lapangan
     pitch = Pitch(pitch_type='statsbomb', pitch_color='white', line_color='black')
     fig, ax = pitch.draw(figsize=figsize)
 
-    # 2. Cari weight maksimum untuk skala ketebalan
     max_w = max((G[u][v]['weight'] for u, v in G.edges()), default=1.0)
     tl = title.lower()
 
-    # 3. Gambar edges
     for u, v in G.edges():
         x1, y1 = positions.get(u, (0, 0))
         x2, y2 = positions.get(v, (0, 0))
         w = G[u][v]['weight']
-        width = (w / max_w) * 5  # skala 0–5 px
+        width = (w / max_w) * 5
 
-        # Pilih warna edge berdasarkan mode
+        # tentukan warna sesuai mode
         if 'attack' in tl:
-            edge_color = "#0F6C2E"   # warna untuk attacking
+            edge_color = "#0F6C2E"
         elif 'defens' in tl:
-            edge_color = '#FF6B6B'   # warna untuk defensive
+            edge_color = "#FF6B6B"
         else:
-            edge_color = '#000000'   # warna untuk basic
+            edge_color = "#000000"
 
-        # Jika attacking/defensive, pakai arrow; else garis biasa
         if 'attack' in tl or 'defens' in tl:
+            # panah dengan head dijauhkan sebelum node
             arr = FancyArrowPatch(
-                (x1, y1), (x2, y2),
-                arrowstyle='-|>',                # kepala panah segitiga
-                mutation_scale=10 + width * 2,   # skala kepala
-                linewidth=width,                 # tebal batang
+                posA=(x1, y1),
+                posB=(x2, y2),
+                arrowstyle='-|>',
+                shrinkA=0,         # tidak shrink di tail
+                shrinkB=15,        # geser head 15 poin sebelum node
+                mutation_scale=10 + width * 2,
+                linewidth=width,
                 color=edge_color,
                 alpha=0.8,
                 zorder=2
             )
             ax.add_patch(arr)
         else:
-            ax.plot(
-                [x1, x2], [y1, y2],
-                color=edge_color,
-                linewidth=width,
-                alpha=0.6,
-                zorder=1
-            )
+            ax.plot([x1, x2], [y1, y2],
+                    color=edge_color,
+                    linewidth=width,
+                    alpha=0.6,
+                    zorder=1)
 
-    # 4. Gambar node (pemain)
-    node_color = "#2B2B67"   # isi warna node
-    outline_color = "#202D39"  # ganti ini sesuai keinginan
-    outline_width = 2          # tebal outline
+    # gambar node di atas semua edge
+    node_color = "#2B2B67"
+    outline_color = "#0C1B2B"
+    outline_width = 2
     for player, (x, y) in positions.items():
-        ax.scatter(
-            x, y,
-            s=1200,
-            color=node_color,
-            edgecolors=outline_color,   # ← ini outline color
-            linewidths=outline_width,   # ← ini ketebalan outline
-            zorder=3
-        )
-
-        # gambar nama di atas node
-        ax.text(
-            x, y,                      
-            player.split()[0],
-            ha='center', va='center',   # pusat horizontal & vertikal
-            fontsize=8, fontweight='bold',
-            color='white',
-            zorder=4
-        )
+        ax.scatter(x, y,
+                   s=1200,
+                   color=node_color,
+                   edgecolors=outline_color,
+                   linewidths=outline_width,
+                   zorder=3)
+        ax.text(x, y,
+                player.split()[0],
+                ha='center', va='center',
+                fontsize=8, fontweight='bold',
+                color='white',
+                zorder=4)
 
     ax.set_title(title, fontsize=16)
     plt.tight_layout()
     plt.show()
 
 
+def draw_shortest_path(G, positions, path, title="Shortest Path", figsize=(12, 8)):
+    """
+    Visualisasi snapshot jalur terpendek:
+    G         : networkx.DiGraph (berisi atribut 'weight')
+    positions : dict pemain -> (x,y)
+    path      : list node berurutan [source, ..., target]
+    title     : judul plot
+    """
+    from mplsoccer import Pitch
+    from matplotlib.patches import FancyArrowPatch
 
-# 4. Graph Cost, Path, Centralities
+    # 1. Buat subgraph hanya dengan edge di path
+    subG = nx.DiGraph()
+    for u, v in zip(path[:-1], path[1:]):
+        if G.has_edge(u, v):
+            subG.add_edge(u, v, weight=G[u][v]['weight'])
+
+    # 2. Gambar pitch
+    pitch = Pitch(pitch_type='statsbomb', pitch_color='white', line_color='black')
+    fig, ax = pitch.draw(figsize=figsize)
+
+    # 3. Plot panah sesuai bobot
+    max_w = max((subG[u][v]['weight'] for u, v in subG.edges()), default=1.0)
+    for u, v in subG.edges():
+        x1, y1 = positions[u]
+        x2, y2 = positions[v]
+        w = subG[u][v]['weight']
+        width = (w / max_w) * 5
+        arr = FancyArrowPatch(
+            posA=(x1, y1),
+            posB=(x2, y2),
+            arrowstyle='-|>',
+            shrinkA=0,               # jangan shrink di tail
+            shrinkB=15,              # geser kepala panah 15 poin dari node
+            mutation_scale=10 + width*2,
+            linewidth=width,
+            color= 'black',
+            alpha=0.8,
+            zorder=4
+        )
+        ax.add_patch(arr)
+
+    # 4. Plot node path
+    for player in path:
+        x, y = positions[player]
+        ax.scatter(x, y,
+                   s=1200,
+                   color='#2B2B67',
+                   edgecolors='#2C3E50',
+                   linewidths=2,
+                   zorder=3)
+        ax.text(x, y, player.split()[0],
+                ha='center', va='center',
+                fontsize=8, fontweight='bold',
+                color='white', zorder=4)
+
+    ax.set_title(title, fontsize=16)
+    plt.tight_layout()
+    plt.show()
+
+
+# Animation for Shortest Path
+
+def animate_shortest_path(G, positions, path, interval=800, figsize=(12, 8)):
+    from mplsoccer import Pitch
+    import matplotlib.pyplot as plt
+    from matplotlib import animation
+
+    # Buat pitch dan axes
+    pitch = Pitch(pitch_type='statsbomb', pitch_color='white', line_color='black')
+    fig, ax = pitch.draw(figsize=figsize)
+
+    # Siapkan urutan langkah: node → edge → node → …
+    steps = []
+    for i, player in enumerate(path):
+        steps.append(('node', player))
+        if i < len(path) - 1:
+            steps.append(('edge', (player, path[i + 1])))
+
+    artists = []
+
+    def update(frame):
+        kind, item = steps[frame]
+
+        if kind == 'node':
+            # Gambar node sebagai titik hitam
+            x, y = positions[item]
+            artist = ax.scatter(
+                x, y,
+                s=1200,
+                color='black',
+                edgecolors='white',
+                linewidths=2,
+                zorder=4
+            )
+            text = ax.text(
+                x, y,
+                item.split()[0],
+                ha='center', va='center',
+                fontsize=8, fontweight='bold',
+                color='white',
+                zorder=5
+            )
+            artists.extend([artist, text])
+
+        else:
+            # Gambar edge sebagai garis hitam
+            u, v = item
+            x1, y1 = positions[u]
+            x2, y2 = positions[v]
+            w = G[u][v]['weight']
+            max_w = max((G[a][b]['weight'] for a, b in G.edges()), default=1.0)
+            width = (w / max_w) * 5
+
+            line, = ax.plot(
+                [x1, x2], [y1, y2],
+                linewidth=width,
+                color='black',
+                alpha=0.8,
+                zorder=3
+            )
+            artists.append(line)
+
+        return artists
+
+    ani = animation.FuncAnimation(
+        fig, update,
+        frames=len(steps),
+        interval=interval,
+        blit=True,
+        repeat=False
+    )
+
+    plt.show()
+    return ani
+
+
+# Graph Cost, Path, Centralities
+
 def compute_realistic_cost(G, positions, accuracy):
     clustering = nx.clustering(G.to_undirected())
     pagerank = nx.pagerank(G)
@@ -216,6 +367,7 @@ def compute_realistic_cost(G, positions, accuracy):
 
     return G
 
+
 def get_shortest_path(G, source, target, positions, accuracy):
     G = compute_realistic_cost(G, positions, accuracy)
     try:
@@ -224,6 +376,7 @@ def get_shortest_path(G, source, target, positions, accuracy):
         return path, cost
     except nx.NetworkXNoPath:
         return [], float('inf')
+
 
 def analyze_centralities(G):
     return {

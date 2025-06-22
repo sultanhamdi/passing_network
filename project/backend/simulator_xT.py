@@ -3,16 +3,19 @@ from analysis_merged_xT import (
     load_event_data_from_url,
     extract_starting_players,
     build_passing_graph_with_xt,
+    animate_shortest_path,
     get_shortest_path,
     analyze_centralities,
-    draw_network
+    draw_network,
 )
 
 import networkx as nx
 from collections import defaultdict
 import community as community_louvain  # Louvain clustering
 
+
 def main():
+    # Tampilkan daftar pertandingan
     urls = get_url_mapping()
     print("\n📁 Daftar Pertandingan yang Tersedia:")
     match_keys = list(urls.keys())
@@ -27,6 +30,7 @@ def main():
         print("\n❌ Input tidak valid.")
         return
 
+    # Load data dan pilih tim
     events = load_event_data_from_url(match_url)
     teams = sorted({e['team']['name'] for e in events if 'team' in e})
     print("\n🔍 Tim yang tersedia:")
@@ -40,6 +44,7 @@ def main():
         print("❌ Input tidak valid.")
         return
 
+    # Ekstrak pemain dan bangun ketiga graph
     players, _ = extract_starting_players(events, team_name)
     player_list = sorted(players)
     print("\n👥 Pemain (Starting XI):")
@@ -58,6 +63,7 @@ def main():
 
     basic_g, attack_g, defense_g, pos = build_passing_graph_with_xt(events, players, team_name)
 
+    # Tentukan graph untuk visualisasi
     if mode == 1:
         G = basic_g
         title = f"{team_name} Passing Frequency Network"
@@ -74,6 +80,7 @@ def main():
 
     draw_network(G, pos, title=title)
 
+    # Pilih pemain untuk shortest path
     print("\n🔁 Pemain yang tersedia:")
     for i, p in enumerate(player_list):
         print(f"{i+1}. {p}")
@@ -87,24 +94,27 @@ def main():
         print("❌ Input pemain tidak valid.")
         return
 
-    # Dummy akurasi (belum dihitung di xT)
-    accuracy = {p: 0.9 for p in G.nodes()}
-    path, cost = get_shortest_path(G, source, target, pos, accuracy)
+    # Shortest path selalu menggunakan graph default (basic_g)
+    accuracy = {p: 0.9 for p in basic_g.nodes()}
+    path, cost = get_shortest_path(basic_g, source, target, pos, accuracy)
 
-    print(f"\n🔍 Shortest path dari {source} ke {target}:")
+    print(f"\n🔍 Shortest path (basic) dari {source} ke {target}:")
     if path:
         for i, p in enumerate(path):
             print(f"{i+1}. {p}")
         print(f"Total cost: {cost:.4f}")
+        animate_shortest_path(basic_g, pos, path, interval=800)
     else:
         print("Tidak ditemukan jalur.")
 
+    # Analisis centrality
     print("\n📊 Centrality Analysis:")
     central = analyze_centralities(G)
     for k in ['degree', 'betweenness', 'pagerank']:
         top = max(central[k], key=central[k].get)
         print(f"- {k.capitalize()} tertinggi: {top} ({central[k][top]:.4f})")
 
+    # Deteksi komunitas dengan Louvain
     print("\n🔗 Deteksi Komunitas (Clustering via Louvain):")
     try:
         partition = community_louvain.best_partition(G.to_undirected())
@@ -115,6 +125,7 @@ def main():
             print(f"  Komunitas {i}: {', '.join(sorted(comm))}")
     except Exception as e:
         print(f"  ❌ Gagal mendeteksi komunitas: {e}")
+
 
 if __name__ == "__main__":
     main()

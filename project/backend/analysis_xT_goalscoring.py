@@ -5,396 +5,209 @@ import math
 import numpy as np
 from collections import defaultdict
 from heapq import heappush, heappop
+from mplsoccer import Pitch
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
-# # untuk load file local (kalo ada)
-# def load_event_data(file_path):
-#     with open(file_path, "r", encoding="utf-8") as f:
-#         return json.load(f)
-
+# Load mapping of match names to URLs
 def get_url_mapping():
     return {
         "Barcelona vs Atletico Madrid": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773372.json",
         "Barcelona vs Real Madrid": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773585.json",
         "Barcelona vs Sevilla": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773672.json",
-        "Spain vs Russia" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/7582.json"
+        "Spain vs Russia": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/7582.json",
+        "Argentina vs France": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3869685.json",
+        "Liverpool vs Milan": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/2302764.json",
+        "Arsenal vs Manchester United": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3749246.json",
+        "Arsenal vs Leicester City": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3749257.json"
     }
 
-# load file data dari urls (hugging face)
+# Load event data from URL
 def load_event_data_from_url(url):
     response = requests.get(url)
     response.raise_for_status()
     return response.json()
 
-def extract_starting_players(events, team_name="Barcelona"):
-    players = set()
-    positions = {}
+# Extract starting XI players for a given team
+def extract_starting_players(events, team_name):
+    players = []
+    seen = set()
     for e in events:
         if e.get("type", {}).get("name") == "Starting XI" and e.get("team", {}).get("name") == team_name:
-            for p in e["tactics"]["lineup"]:
-                name = p["player"]["name"]
-                players.add(name)
-                positions[name] = p["position"]["name"]
-    return players, positions
+            for p in e.get("tactics", {}).get("lineup", []):
+                name = p.get("player", {}).get("name")
+                if name and name not in seen:
+                    seen.add(name)
+                    players.append(name)
+    return players
 
-def build_passing_graph(events, starting_players, team_name="Barcelona", threshold=1):
-    passes = defaultdict(int)
-    location_data = defaultdict(list)
-    pass_total = defaultdict(int)
-    pass_success = defaultdict(int)
-
-    for e in events:
-        if e.get("type", {}).get("name") != "Pass": continue
-        if e.get("team", {}).get("name") != team_name: continue
-        if "recipient" not in e.get("pass", {}): continue
-
-        passer = e["player"]["name"]
-        receiver = e["pass"]["recipient"]["name"]
-        # Pastikan hanya starting player yang dicek
-        if passer in starting_players and receiver in starting_players:
-            passes[(passer, receiver)] += 1
-            pass_total[passer] += 1
-            if e.get("pass", {}).get("outcome") is None:
-                pass_success[passer] += 1
-                if e.get("location"):
-                    location_data[passer].append(e["location"])
-                    location_data[receiver].append(e["pass"]["end_location"])
-
-    G = nx.DiGraph()
-    for (u, v), w in passes.items():
-        if w >= threshold:
-            G.add_edge(u, v, weight=w)
-
-    positions = {
-        p: (sum(x for x, y in locs) / len(locs), sum(y for x, y in locs) / len(locs))
-        for p, locs in location_data.items() if locs
-    }
-
-    accuracy = {p: pass_success[p] / pass_total[p] for p in pass_total if pass_total[p] > 0}
-
-    return G, positions, accuracy
-
+# Convert pitch coords to xT grid index
 def get_grid_cell(x, y):
-    """Ubah koordinat lapangan ke index grid lapangan"""
     pitch_length, pitch_width = 120, 80
     grid_length, grid_width = 16, 12
-    
-    x_norm = max(0, min(x, pitch_length)) # [0, 120)
-    y_norm = max(0, min(y, pitch_width)) # [0, 80)
-    i = int((x_norm / pitch_length) * grid_length) # [0, 16)
-    j = int((y_norm / pitch_width) * grid_width) # [0, 12)
+    x_norm = max(0, min(x, pitch_length))
+    y_norm = max(0, min(y, pitch_width))
+    i = int((x_norm / pitch_length) * grid_length)
+    j = int((y_norm / pitch_width) * grid_width)
     return min(i, grid_length - 1), min(j, grid_width - 1)
 
-# TODO:
-# 5. xT path finding
-
-def compute_pass_xT_gain_avg(events, starting_players, team_name="Barcelona"):
-    # TODO: Take xT of all passes, then see which passes gain the most xT
-    # GA BISA CUMA ambil avg position trus cocokin sama grid.
-    # Liat dlu average xT gain dari kombinasi2 pass DIMANAPUN pass itu dilakukan di lapangan.
-
-    # Allow cek Barcelona aja
-    if team_name != "Barcelona":
-        print("Maaf, baru ada xT map untuk Barcelona saja.")
-        print("Pilih tim Barcelona untuk menampilkan attacking-weighted passing network.")
-        return
-
-    xT_matrix = np.load("barcelona_xt.npy") # working
-    
-    pass_total = defaultdict(lambda: defaultdict(int))  # pass_total[passer][receiver] = count
-    xT_total = defaultdict(lambda: defaultdict(float))  # xT_total[passer][receiver] = sum(xT_gain)
-
+# Compute average xT gain per pass between players
+def compute_pass_xT_gain_avg(events, starting_players, team_name):
+    xT_matrix = np.load("xT_map.npy")
+    pass_total = defaultdict(lambda: defaultdict(int))
+    xT_total = defaultdict(lambda: defaultdict(float))
     for e in events:
-        # Ambil pass aja
         if e.get("type", {}).get("name") != "Pass": continue
-        # Ambil yang dari tim diinginkan aja
         if e.get("team", {}).get("name") != team_name: continue
-        # Ambil pass yang complete (ada penerima pass)
-        if "recipient" not in e.get("pass", {}): continue
-
-        passer = e["player"]["name"]
-        receiver = e["pass"]["recipient"]["name"]
-        # Ambil dari starting players aja, non-cadangan
-        if passer in starting_players and receiver in starting_players:
-            pass_total[passer][receiver] += 1
-
-            pitch_start = e.get("location", [0, 0])
-            pitch_end = e.get("pass", {}).get("end_location", [0, 0])
-            # Konversi ke koordinat grid xT map
-            grid_start = get_grid_cell(pitch_start[0], pitch_start[1]) # Pastiin dia dapat dlm list
-            grid_end = get_grid_cell(pitch_end[0], pitch_end[1])
-
-            # Compute dengan value2 di xT map
-            xT_gain = xT_matrix[grid_end] - xT_matrix[grid_start]
-            xT_total[passer][receiver] += xT_gain
-    
+        p = e.get("pass", {})
+        if "recipient" not in p: continue
+        passer = e.get("player", {}).get("name")
+        receiver = p.get("recipient", {}).get("name")
+        if passer not in starting_players or receiver not in starting_players: continue
+        pass_total[passer][receiver] += 1
+        start_loc = e.get("location", [0, 0])
+        end_loc = p.get("end_location", [0, 0])
+        gs = get_grid_cell(start_loc[0], start_loc[1])
+        ge = get_grid_cell(end_loc[0], end_loc[1])
+        xT_gain = xT_matrix[ge] - xT_matrix[gs]
+        xT_total[passer][receiver] += xT_gain
     xT_avg = defaultdict(lambda: defaultdict(float))
-    for passer in pass_total:
-        for receiver in pass_total[passer]:
-            count = pass_total[passer][receiver]
+    for passer, recs in pass_total.items():
+        for receiver, count in recs.items():
             if count > 0:
                 xT_avg[passer][receiver] = xT_total[passer][receiver] / count
-
     return xT_avg
 
-# NOTE: KHUSUS BARCELONA karena pakai xT Barca
-def build_attacking_weighted_graph(events, starting_players, team_name="Barcelona", threshold=0):
-    """
-    Build a directed graph weighted by average xT gain per pass.
-    Positive weights indicate passes that increase expected threat.
-    """
+# Build weighted graph for pathfinding
+def build_weighted_graph(events, starting_players, team_name):
+    xT_matrix = np.load("xT_map.npy")
+    player_data = defaultdict(lambda: {"positions": [], "xG": 0, "shots": 0})
+    for e in events:
+        if e.get("team", {}).get("name") != team_name: continue
+        player = e.get("player", {}).get("name")
+        if player not in starting_players: continue
+        loc = e.get("location")
+        if loc and len(loc) >= 2:
+            player_data[player]["positions"].append(loc)
+        if e.get("type", {}).get("name") == "Shot":
+            player_data[player]["xG"] += e.get("shot", {}).get("statsbomb_xg", 0)
+            player_data[player]["shots"] += 1
+    positions, xG_rates = {}, {}
+    for p in starting_players:
+        data = player_data[p]
+        if data["positions"]:
+            xs = [pos[0] for pos in data["positions"]]
+            ys = [pos[1] for pos in data["positions"]]
+            positions[p] = (np.mean(xs), np.mean(ys))
+        if data["shots"] > 0:
+            xG_rates[p] = data["xG"] / data["shots"]
     xT_avg = compute_pass_xT_gain_avg(events, starting_players, team_name)
-    
     G = nx.DiGraph()
-    
-    # Add edges with xT gain as weights
-    for passer in xT_avg:
-        for receiver in xT_avg[passer]:
-            avg_xt_gain = xT_avg[passer][receiver]
-            if avg_xt_gain > threshold:  # Only include passes with positive xT gain
-                G.add_edge(passer, receiver, weight=avg_xt_gain)
-    
-    return G
+    for u, receivers in xT_avg.items():
+        for v, avg_xt in receivers.items():
+            grid = get_grid_cell(*positions.get(v, (0,0)))
+            pot = 0.2 * xT_matrix[grid] + 0.1 * xG_rates.get(v, 0)
+            weight = avg_xt + pot
+            G.add_edge(u, v, weight=weight)
+    return G, positions
 
-def build_defensive_weighted_graph(events, starting_players, team_name="Barcelona", threshold=0):
-    """
-    Build a directed graph weighted by defensive value (negative xT gain).
-    Positive weights indicate passes that decrease opponent's threat.
-    """
-    xT_avg = compute_pass_xT_gain_avg(events, starting_players, team_name)
-    
-    G = nx.DiGraph()
-    
-    # Add edges with inverse xT gain (defensive value)
-    for passer in xT_avg:
-        for receiver in xT_avg[passer]:
-            defensive_value = -xT_avg[passer][receiver]  # Flip the sign
-            if defensive_value > threshold:  # Only include valuable defensive passes
-                G.add_edge(passer, receiver, weight=defensive_value)
-    
-    return G
+# Find top optimal xT paths
+def xT_based_goal_pathfinding(G, origin_player, max_passes=3):
+    heap = []
+    heappush(heap, (0, origin_player, [origin_player], 0))
+    results = []
+    while heap:
+        neg_val, current, path, depth = heappop(heap)
+        val = -neg_val
+        if depth > max_passes: continue
+        if val > 0 and depth > 0: results.append((path, val))
+        for nbr in G.successors(current):
+            if nbr in path: continue
+            w = G[current][nbr]['weight']
+            heappush(heap, (-(val + w), nbr, path + [nbr], depth + 1))
+    top = sorted(results, key=lambda x: -x[1])[:5]
+    return [{"path": p, "total_xT": v} for p, v in top]
 
-def compute_realistic_cost(G, positions, accuracy):
-    clustering = nx.clustering(G.to_undirected())
-    pagerank = nx.pagerank(G)
+# Animate a given path on the pitch
+def animate_path(G, positions, path, interval=800, title='Top xT Path (Animasi)', figsize=(12,8)):
+    pitch = Pitch(pitch_type='statsbomb', pitch_color='white', line_color='black')
+    fig, ax = pitch.draw(figsize=figsize)
 
-    alpha, beta, gamma, delta, epsilon = 1.0, 1.0, 1.0, 0.5, 0.5
+    # Prepare animation steps
+    steps = []
+    for i, node in enumerate(path):
+        steps.append(('node', node))
+        if i < len(path) - 1:
+            steps.append(('edge', (node, path[i+1])))
 
-    for u, v in G.edges():
-        freq = G[u][v]['weight']
-        freq_cost = 1 / (freq + 1e-6)
-
-        dist = 0.5
-        if u in positions and v in positions:
+    artists = []
+    def update(frame):
+        kind, item = steps[frame]
+        if kind == 'node':
+            x, y = positions[item]
+            artist = ax.scatter(x, y, s=1200, facecolor="#3333C8", edgecolors="black", linewidths=2, zorder=4)
+            text = ax.text(x, y, item.split()[0], ha='center', va='center', color='white', fontsize=8, fontweight='bold', zorder=5)
+            artists.extend([artist, text])
+        else:
+            u, v = item
             x1, y1 = positions[u]
             x2, y2 = positions[v]
-            dist = math.hypot(x2 - x1, y2 - y1) / 100
+            line, = ax.plot([x1, x2], [y1, y2], linewidth=4, color='black', alpha=0.8, zorder=3)
+            artists.append(line)
+        return artists
 
-        acc_penalty = 1 - accuracy.get(u, 0.8)
-        cluster_penalty = 1 / (clustering.get(u, 0.5) + 1e-6)
-        pagerank_target = 1 / (pagerank.get(v, 0.1) + 1e-6)
+    ani = animation.FuncAnimation(fig, update, frames=len(steps), interval=interval, blit=True, repeat=False)
+    ax.set_title(title, fontsize=16)
+    plt.tight_layout()
+    plt.show()
+    return ani
 
-        cost = (
-            alpha * freq_cost +
-            beta * dist +
-            gamma * acc_penalty +
-            delta * cluster_penalty +
-            epsilon * pagerank_target
-        )
-
-        G[u][v]['cost'] = cost
-
-    return G
-
-def analyze_centralities(G):
-    return {
-        'degree': dict(G.degree()),
-        'in_degree': dict(G.in_degree()),
-        'out_degree': dict(G.out_degree()),
-        'betweenness': nx.betweenness_centrality(G),
-        'closeness': nx.closeness_centrality(G),
-        'pagerank': nx.pagerank(G)
-    }
-
-def get_shortest_path(G, source, target):
+# Main runner
+def main():
+    urls = get_url_mapping()
+    print("\n📁 Daftar Pertandingan:")
+    matches = list(urls.keys())
+    for i, m in enumerate(matches, 1): print(f"{i}. {m}")
     try:
-        path = nx.shortest_path(G, source=source, target=target, weight='cost')
-        cost = sum(G[u][v]['cost'] for u, v in zip(path[:-1], path[1:]))
-        return path, cost
-    except nx.NetworkXNoPath:
-        return [], float('inf')
+        idx = int(input("Pilih nomor pertandingan: ")) - 1
+        match_name = matches[idx]
+    except:
+        print("❌ Pilihan tidak valid.")
+        return
+    events = load_event_data_from_url(urls[match_name])
 
-def xT_based_goal_pathfinding(events, starting_players, origin_player, team_name="Barcelona", max_passes=3):
-    """
-    Find optimal passing sequences from specified origin player to maximize xT gain.
-    Uses modified Dijkstra's algorithm to find highest-value paths.
-    
-    Args:
-        events: List of match events
-        starting_players: Set of starting players
-        origin_player: Player name to start paths from
-        team_name: Team to analyze (default "Barcelona")
-        max_passes: Maximum passes in sequence (default 5)
-    
-    Returns:
-        List of dicts containing path info, sorted by total xT gain
-    """
-    # Load xT matrix
-    xT_matrix = np.load("xT_map.npy")
-    
-    # Validate origin player
-    if origin_player not in starting_players:
-        print(f"Error: {origin_player} not in starting lineup")
-        return []
+    # Select team
+    teams = sorted({e.get("team", {}).get("name") for e in events if e.get("team")})
+    print("\n🔍 Tim yang tersedia:")
+    for i, t in enumerate(teams, 1): print(f"{i}. {t}")
+    try:
+        team_name = teams[int(input("Pilih tim: ")) - 1]
+    except:
+        print("❌ Pilihan tidak valid.")
+        return
 
-    # Get player average positions and xG data
-    player_data = defaultdict(lambda: {'positions': [], 'xG': 0, 'shots': 0})
-    
-    for e in events:
-        if e.get("team", {}).get("name") != team_name:
-            continue
-            
-        try:
-            player = e.get("player", {}).get("name")
-            if not player or player not in starting_players:
-                continue
-                
-            if "location" in e:
-                player_data[player]['positions'].append(e["location"])
-                
-                # Track xG for shots
-                if e.get("type", {}).get("name") == "Shot":
-                    player_data[player]['xG'] += e.get("shot", {}).get("statsbomb_xg", 0)
-                    player_data[player]['shots'] += 1
-        except (KeyError, AttributeError):
-            continue
-    
-    # Process player data
-    players = []
-    positions = {}
-    xG_rates = {}
-    
-    for player in starting_players:
-        if player in player_data and player_data[player]['positions']:
-            try:
-                positions[player] = (
-                    np.mean([pos[0] for pos in player_data[player]['positions'] if pos and len(pos) >= 2]),
-                    np.mean([pos[1] for pos in player_data[player]['positions'] if pos and len(pos) >= 2])
-                )
-                xG_rates[player] = player_data[player]['xG'] / max(1, player_data[player]['shots'])
-                players.append(player)
-            except (TypeError, IndexError):
-                continue
-    
-    # Build weighted graph
-    G = nx.DiGraph()
-    
-    for e in events:
-        try:
-            if (e.get("type", {}).get("name") == "Pass" and 
-                e.get("team", {}).get("name") == team_name and
-                "recipient" in e.get("pass", {}) and
-                "player" in e and "name" in e["player"] and
-                "recipient" in e["pass"] and "name" in e["pass"]["recipient"]):
-                
-                passer = e["player"]["name"]
-                receiver = e["pass"]["recipient"]["name"]
-                
-                if passer not in players or receiver not in players:
-                    continue
-                
-                # Verify location data
-                if "location" not in e or len(e["location"]) < 2:
-                    continue
-                if "end_location" not in e.get("pass", {}) or len(e["pass"]["end_location"]) < 2:
-                    continue
-                
-                # Calculate xT gain
-                start_cell = get_grid_cell(*e["location"][:2])
-                end_cell = get_grid_cell(*e["pass"]["end_location"][:2])
-                xT_gain = xT_matrix[end_cell] - xT_matrix[start_cell]
-                
-                # Composite value (xT gain + receiver potential)
-                if receiver in positions:
-                    receiver_cell = get_grid_cell(*positions[receiver])
-                    total_value = xT_gain + 0.2 * xT_matrix[receiver_cell] + 0.1 * xG_rates.get(receiver, 0)
-                    
-                    if G.has_edge(passer, receiver):
-                        G[passer][receiver]['weight'] = max(G[passer][receiver]['weight'], total_value)
-                    else:
-                        G.add_edge(passer, receiver, weight=total_value)
-        except (KeyError, TypeError):
-            continue
-    
-    # Modified Dijkstra's algorithm to find highest-value paths
-    def find_optimal_paths(G, source, max_passes):
-        heap = []
-        heappush(heap, (0, source, [source], 0))  # (-total_xT, current_player, path, pass_count)
-        
-        paths = []
-        visited = set()
-        
-        while heap:
-            neg_xT, current, path, count = heappop(heap)
-            current_xT = -neg_xT
-            
-            if count > max_passes:
-                continue
-            
-            # Record path if it reaches an attacking position
-            if current_xT > 0 and count > 1:  # At least one pass
-                paths.append((path, current_xT))
-            
-            # Explore neighbors
-            for neighbor in G.successors(current):
-                if neighbor not in path:  # Prevent cycles
-                    try:
-                        edge_weight = G[current][neighbor]['weight']
-                        new_xT = current_xT + edge_weight
-                        heappush(heap, (-new_xT, neighbor, path + [neighbor], count + 1))
-                    except KeyError:
-                        continue
-        
-        return paths
-    
-    # Find all paths from origin player
-    all_paths = find_optimal_paths(G, origin_player, max_passes)
-    
-    # Prepare results (top 5 paths)
-    results = []
-    for path, xT_value in sorted(all_paths, key=lambda x: -x[1])[:5]:
-        try:
-            path_info = {
-                'origin': origin_player,
-                'path': path,
-                'total_xT_gain': xT_value,
-                'positions': [positions[p] for p in path if p in positions],
-                'xG_potential': sum(xG_rates.get(p, 0) for p in path[-2:] if p in xG_rates),
-                'num_passes': len(path) - 1
-            }
-            results.append(path_info)
-        except KeyError:
-            continue
-    
-    return results
+    players = extract_starting_players(events, team_name)
+    if not players:
+        print(f"❌ Tidak ada Starting XI untuk {team_name}.")
+        return
+    print("\n👥 Starting XI:")
+    for i, p in enumerate(players, 1): print(f"{i}. {p}")
+    try:
+        origin = players[int(input("Pilih pemain asal: ")) - 1]
+    except:
+        print("❌ Pilihan tidak valid.")
+        return
 
-# Runner tester
-urls = get_url_mapping()["Barcelona vs Real Madrid"]
-events = load_event_data_from_url(urls)
-players, _ = extract_starting_players(events, "Barcelona")
-print(players)
+    G, positions = build_weighted_graph(events, players, team_name)
+    optimal = xT_based_goal_pathfinding(G, origin)
 
-xT_avg_counted = compute_pass_xT_gain_avg(events, players, team_name="Barcelona")
-print(build_attacking_weighted_graph(events, players, team_name="Barcelona"))
-print(build_defensive_weighted_graph(events, players, team_name="Barcelona"))
-# Cek visualisasi passnet di project\backend\analysis_xT.py
+    print(f"\nTop Optimal xT Paths dari {origin} ({team_name}):")
+    for i, res in enumerate(optimal, 1):
+        print(f"\nPath {i}: {' → '.join(res['path'])}\nTotal xT: {res['total_xT']:.3f}")
 
-optimal_paths = xT_based_goal_pathfinding(events, players, origin_player="Philippe Coutinho Correia", team_name="Barcelona")
+    if optimal:
+        print("\n🔍 Visualisasi Path 1 (Animasi):")
+        animate_path(G, positions, optimal[0]['path'], interval=800, title=f"Top xT Path dari {origin} (Total {optimal[0]['total_xT']:.3f}) (Animasi)")
 
-# Print results
-print("\nTop Optimal xT Paths:")
-for i, path in enumerate(optimal_paths, 1):
-    print(f"\nPath {i}:")
-    print(" → ".join(path['path']))
-    print(f"Total xT gain: {path['total_xT_gain']:.3f}")
-    print(f"xG potential in final moves: {path['xG_potential']:.3f}")
-    print("Positions:", ["(%d,%d)" % (x,y) for x,y in path['positions']])
+if __name__ == "__main__":
+    main()
