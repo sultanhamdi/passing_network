@@ -20,7 +20,7 @@ def get_url_mapping():
         "Argentina vs France" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3869685.json",
         "Liverpool vs Milan" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/2302764.json",
         "Arsenal vs Manchester United":"https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3749246.json",
-        "Arsenal vs Leicster City" : "https://huggingface.co/datasets/sultanhamdi/passnet/blob/main/3749257.json"
+        "Arsenal vs Leicster City" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3749257.json"
     }
 
 def load_event_data_from_url(url):
@@ -196,7 +196,8 @@ def draw_network(G, positions, title="Passing Network", figsize=(12, 8)):
 
     ax.set_title(title, fontsize=16)
     plt.tight_layout()
-    plt.show()
+    # plt.show()
+    return fig
 
 
 def draw_shortest_path(G, positions, path, title="Shortest Path", figsize=(12, 8)):

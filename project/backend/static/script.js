@@ -1,85 +1,101 @@
-document.addEventListener("DOMContentLoaded", () => {
-  const matchSelect = document.getElementById("match-select");
-  const teamSelect = document.getElementById("team-select");
-  const sourcePlayer = document.getElementById("source-player");
-  const targetPlayer = document.getElementById("target-player");
-  const modeSelect = document.getElementById("mode-select");
-  const analyzeBtn = document.getElementById("analyze-btn");
-  const results = document.getElementById("results");
+const API = window.location.origin;
 
-  const teamSection = document.getElementById("team-section");
-  const playerSection = document.getElementById("player-section");
-  const modeSection = document.getElementById("mode-section");
-  const resultSection = document.getElementById("result-section");
+// Bantu fetch JSON dari API
+async function fetchJSON(path) {
+  const res = await fetch(`${API}${path}`);
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
 
-  const apiBase = "http://localhost:5000"; // Ganti jika backend beda port atau deploy
+// Inisialisasi daftar match
+async function initMatches() {
+  const sel = document.getElementById('matchSelect');
+  const matches = await fetchJSON('/matches');
+  matches.forEach(m => sel.add(new Option(m, m)));
+}
 
-  async function fetchMatches() {
-    const res = await fetch(`${apiBase}/matches`);
-    const matches = await res.json();
-    matchSelect.innerHTML = matches.map(
-      (m, i) => `<option value="${m.url}">${m.name}</option>`
-    ).join("");
-    teamSection.classList.remove("hidden");
-  }
+// Sembunyikan kedua <img>
+function clearDisplays() {
+  document.getElementById('graphImage').style.display = 'none';
+  document.getElementById('animImage').style.display = 'none';
+}
 
-  matchSelect.addEventListener("change", async () => {
-    const url = matchSelect.value;
-    const res = await fetch(`${apiBase}/teams?url=${encodeURIComponent(url)}`);
-    const teams = await res.json();
-    teamSelect.innerHTML = teams.map(
-      t => `<option value="${t}">${t}</option>`
-    ).join("");
-    playerSection.classList.add("hidden");
-    modeSection.classList.add("hidden");
-    resultSection.classList.add("hidden");
-  });
+// Load & tampilkan graph PNG
+async function loadGraphImage(mode) {
+  clearDisplays();
+  const match = encodeURIComponent(document.getElementById('matchSelect').value);
+  const team  = encodeURIComponent(document.getElementById('teamSelect').value);
+  const img   = document.getElementById('graphImage');
+  img.src     = `${API}/graph-image?match=${match}&team=${team}&mode=${mode}`;
+  img.onload  = () => img.style.display = 'block';
+  img.onerror = () => console.error('Failed to load graph image');
+}
 
-  teamSelect.addEventListener("change", async () => {
-    const url = matchSelect.value;
-    const team = teamSelect.value;
-    const res = await fetch(`${apiBase}/players?url=${encodeURIComponent(url)}&team=${encodeURIComponent(team)}`);
-    const players = await res.json();
-    sourcePlayer.innerHTML = targetPlayer.innerHTML = players.map(
-      p => `<option value="${p}">${p}</option>`
-    ).join("");
-    playerSection.classList.remove("hidden");
-    modeSection.classList.remove("hidden");
-  });
+// Load & tampilkan animasi shortest-path
+async function runShortest() {
+  clearDisplays();
+  const m   = encodeURIComponent(document.getElementById('matchSelect').value);
+  const t   = encodeURIComponent(document.getElementById('teamSelect').value);
+  const s   = encodeURIComponent(document.getElementById('srcSelect').value);
+  const tgt = encodeURIComponent(document.getElementById('tgtSelect').value);
+  const anim = document.getElementById('animImage');
+  anim.src    = `${API}/analysis/shortest-path-gif?match=${m}&team=${t}&src=${s}&tgt=${tgt}`;
+  anim.onload = () => anim.style.display = 'block';
+  anim.onerror= () => console.error('Failed to load animation');
+}
 
-  analyzeBtn.addEventListener("click", async () => {
-    const payload = {
-      url: matchSelect.value,
-      team: teamSelect.value,
-      source: sourcePlayer.value,
-      target: targetPlayer.value,
-      mode: parseInt(modeSelect.value)
-    };
+document.addEventListener('DOMContentLoaded', async () => {
+  await initMatches();
 
-    const res = await fetch(`${apiBase}/analyze`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
+  const matchSel = document.getElementById('matchSelect');
+  const teamSel  = document.getElementById('teamSelect');
+
+  // Ketika match dipilih → load tim
+  matchSel.onchange = async () => {
+    clearDisplays();
+    teamSel.disabled = true;
+    teamSel.innerHTML = '<option value="">-- Pilih Tim --</option>';
+    if (!matchSel.value) return;
+    const teams = await fetchJSON(`/teams?match=${encodeURIComponent(matchSel.value)}`);
+    teams.forEach(t => teamSel.add(new Option(t, t)));
+    teamSel.disabled = false;
+  };
+
+  // Setelah tim dipilih → isi player dropdown & enable tombol
+  teamSel.onchange = () => {
+    clearDisplays();
+    const players = Array.from(teamSel.options)
+                         .map(o => o.value).filter(v => v);
+    ['srcSelect','tgtSelect','xtSrcSelect'].forEach(id => {
+      const sel = document.getElementById(id);
+      sel.innerHTML = '';
+      players.forEach(p => sel.add(new Option(p, p)));
+      sel.disabled = false;
     });
+    // aktifkan semua tombol mode & analisis
+    document.querySelectorAll('.mode-buttons button, #runShortest, #runXtGoal, #runCommunities')
+      .forEach(b => b.disabled = false);
+  };
 
-    const data = await res.json();
-    results.textContent = `
-🔍 Shortest Path (${payload.source} → ${payload.target}):
-${data.path.join(" -> ")}
-Cost: ${data.cost.toFixed(4)}
+  // Tombol graph
+  document.querySelectorAll('.mode-buttons button')
+    .forEach(btn => btn.onclick = () => loadGraphImage(btn.dataset.mode));
 
-📊 Centrality:
-Degree: ${data.central.degree}
-Betweenness: ${data.central.betweenness}
-PageRank: ${data.central.pagerank}
+  // Shortest-path
+  document.getElementById('runShortest').onclick = runShortest;
 
-🔗 Komunitas:
-${data.communities.map((c, i) => `Komunitas ${i+1}: ${c.join(", ")}`).join("\n")}
-    `;
-    resultSection.classList.remove("hidden");
-  });
-
-  fetchMatches();
+  // xT Goal Path & Communities masih tampil via alert
+  document.getElementById('runXtGoal').onclick = async () => {
+    const m = encodeURIComponent(matchSel.value);
+    const t = encodeURIComponent(teamSel.value);
+    const s = encodeURIComponent(document.getElementById('xtSrcSelect').value);
+    const res = await fetchJSON(`/analysis/xt-goal-path?match=${m}&team=${t}&src=${s}`);
+    alert(JSON.stringify(res, null, 2));
+  };
+  document.getElementById('runCommunities').onclick = async () => {
+    const m = encodeURIComponent(matchSel.value);
+    const t = encodeURIComponent(teamSel.value);
+    const res = await fetchJSON(`/analysis/communities?match=${m}&team=${t}`);
+    alert(JSON.stringify(res, null, 2));
+  };
 });

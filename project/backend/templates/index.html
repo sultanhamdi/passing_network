@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -6,41 +7,55 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <div class="container">
-    <h1>Passing Network Analyzer</h1>
+  <h1>Passing Network Analyzer</h1>
 
-    <section id="match-section">
-      <h2>Pilih Pertandingan</h2>
-      <select id="match-select"></select>
-    </section>
+  <div class="controls">
+    <label for="matchSelect">Pilih Pertandingan:</label>
+    <select id="matchSelect">
+      <option value="">-- Pilih Pertandingan --</option>
+    </select>
 
-    <section id="team-section" class="hidden">
-      <h2>Pilih Tim</h2>
-      <select id="team-select"></select>
-    </section>
+    <label for="teamSelect">Pilih Tim:</label>
+    <select id="teamSelect" disabled>
+      <option value="">-- Pilih Tim --</option>
+    </select>
 
-    <section id="player-section" class="hidden">
-      <h2>Pilih Pemain Awal & Tujuan</h2>
-      <label for="source-player">Dari:</label>
-      <select id="source-player"></select>
-      <label for="target-player">Ke:</label>
-      <select id="target-player"></select>
-    </section>
+    <div class="mode-buttons">
+      <button data-mode="default" disabled>Default Graph</button>
+      <button data-mode="attacking" disabled>Attacking Graph</button>
+      <button data-mode="defensive" disabled>Defensive Graph</button>
+    </div>
+  </div>
 
-    <section id="mode-section" class="hidden">
-      <h2>Pilih Mode Passing</h2>
-      <select id="mode-select">
-        <option value="1">Default (frekuensi)</option>
-        <option value="2">Attacking-weighted</option>
-        <option value="3">Defensive-weighted</option>
-      </select>
-      <button id="analyze-btn">Analisis</button>
-    </section>
+  <div id="analysisPanel">
+    <h2>Analysis</h2>
 
-    <section id="result-section" class="hidden">
-      <h2>Hasil Analisis</h2>
-      <pre id="results"></pre>
-    </section>
+    <div class="analysis-section">
+      <h3>Shortest Path</h3>
+      <label for="srcSelect">Dari:</label>
+      <select id="srcSelect" disabled></select>
+      <label for="tgtSelect">Ke:</label>
+      <select id="tgtSelect" disabled></select>
+      <button id="runShortest" disabled>Run</button>
+    </div>
+
+    <div class="analysis-section">
+      <h3>xT Goal Path</h3>
+      <label for="xtSrcSelect">Dari:</label>
+      <select id="xtSrcSelect" disabled></select>
+      <button id="runXtGoal" disabled>Run</button>
+    </div>
+
+    <div class="analysis-section">
+      <h3>Communities</h3>
+      <button id="runCommunities" disabled>Show Communities</button>
+    </div>
+  </div>
+
+  <div id="graphContainer">
+    <!-- Python‐generated images akan muncul di sini -->
+    <img id="graphImage" alt="Passing Graph" />
+    <img id="animImage" alt="Shortest-Path Animation" />
   </div>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>
