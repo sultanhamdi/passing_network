@@ -111,7 +111,6 @@ def build_weighted_graph(events, starting_players, team_name):
             G.add_edge(u, v, weight=weight)
     return G, positions
 
-# Find top optimal xT paths
 def xT_based_goal_pathfinding(G, origin_player, max_passes=3):
     heap = []
     heappush(heap, (0, origin_player, [origin_player], 0))
@@ -127,6 +126,61 @@ def xT_based_goal_pathfinding(G, origin_player, max_passes=3):
             heappush(heap, (-(val + w), nbr, path + [nbr], depth + 1))
     top = sorted(results, key=lambda x: -x[1])[:5]
     return [{"path": p, "total_xT": v} for p, v in top]
+
+# Compute realistic pass cost
+def compute_realistic_cost(G, positions, accuracy):
+    clustering = nx.clustering(G.to_undirected())
+    pagerank = nx.pagerank(G)
+    alpha, beta, gamma, delta, epsilon = 1.0, 1.0, 1.0, 0.5, 0.5
+
+    for u, v in G.edges():
+        freq = G[u][v]['weight']
+        freq_cost = 1 / (freq + 1e-6)
+        dist = 0.5
+        if u in positions and v in positions:
+            x1, y1 = positions[u]
+            x2, y2 = positions[v]
+            dist = math.hypot(x2 - x1, y2 - y1) / 100
+        acc_penalty = 1 - accuracy.get(u, 0.8)
+        cluster_penalty = 1 / (clustering.get(u, 0.5) + 1e-6)
+        pagerank_target = 1 / (pagerank.get(v, 0.1) + 1e-6)
+
+        cost = (
+            alpha * freq_cost +
+            beta * dist +
+            gamma * acc_penalty +
+            delta * cluster_penalty +
+            epsilon * pagerank_target
+        )
+
+        G[u][v]['cost'] = cost
+
+    return G
+
+# Safe but dangerous pathfinder (maximize xT/cost)
+def safe_dangerous_goal_path(G, origin_player, positions, accuracy, max_passes=3, top_k=5):
+    G = compute_realistic_cost(G, positions, accuracy)
+    heap = []
+    heappush(heap, (0, 0, origin_player, [origin_player], 0))
+    results = []
+    while heap:
+        neg_score, total_cost, current, path, depth = heappop(heap)
+        score = -neg_score
+        if depth > max_passes:
+            continue
+        if score > 0 and depth > 0:
+            results.append((score, total_cost, path))
+        for nbr in G.successors(current):
+            if nbr in path:
+                continue
+            xT = G[current][nbr]['weight']
+            cost = G[current][nbr].get('cost', 1e-6)
+            new_xT = score * total_cost + xT
+            new_cost = total_cost + cost
+            new_score = new_xT / new_cost if new_cost > 0 else 0
+            heappush(heap, (-new_score, new_cost, nbr, path + [nbr], depth + 1))
+    top = sorted(results, key=lambda x: -x[0])[:top_k]
+    return [{"path": p, "xT": round(s * c, 4), "cost": round(c, 4), "xT_per_cost": round(s, 4)} for s, c, p in top]
 
 # Animate a given path on the pitch
 def animate_path(G, positions, path, interval=800, title='Top xT Path (Animasi)', figsize=(12,8)):
@@ -167,19 +221,22 @@ def main():
     urls = get_url_mapping()
     print("\n📁 Daftar Pertandingan:")
     matches = list(urls.keys())
-    for i, m in enumerate(matches, 1): print(f"{i}. {m}")
+    for i, m in enumerate(matches, 1):
+        print(f"{i}. {m}")
     try:
         idx = int(input("Pilih nomor pertandingan: ")) - 1
         match_name = matches[idx]
     except:
         print("❌ Pilihan tidak valid.")
         return
+
     events = load_event_data_from_url(urls[match_name])
 
     # Select team
     teams = sorted({e.get("team", {}).get("name") for e in events if e.get("team")})
     print("\n🔍 Tim yang tersedia:")
-    for i, t in enumerate(teams, 1): print(f"{i}. {t}")
+    for i, t in enumerate(teams, 1):
+        print(f"{i}. {t}")
     try:
         team_name = teams[int(input("Pilih tim: ")) - 1]
     except:
@@ -190,24 +247,47 @@ def main():
     if not players:
         print(f"❌ Tidak ada Starting XI untuk {team_name}.")
         return
+
     print("\n👥 Starting XI:")
-    for i, p in enumerate(players, 1): print(f"{i}. {p}")
+    for i, p in enumerate(players, 1):
+        print(f"{i}. {p}")
     try:
         origin = players[int(input("Pilih pemain asal: ")) - 1]
     except:
         print("❌ Pilihan tidak valid.")
         return
 
-    G, positions = build_weighted_graph(events, players, team_name)
-    optimal = xT_based_goal_pathfinding(G, origin)
+    # Path preference
+    print("\n🔍 Pilih jenis path:")
+    print("1. Paling produktif (xT tertinggi)")
+    print("2. Paling aman (memperhatikan akurasi & risiko)")
+    try:
+        mode = int(input("Pilihan: "))
+    except:
+        print("❌ Pilihan tidak valid.")
+        return
 
-    print(f"\nTop Optimal xT Paths dari {origin} ({team_name}):")
-    for i, res in enumerate(optimal, 1):
-        print(f"\nPath {i}: {' → '.join(res['path'])}\nTotal xT: {res['total_xT']:.3f}")
+    G, positions = build_weighted_graph(events, players, team_name)
+
+    # Dummy accuracy assumption (real data can be substituted here)
+    accuracy = {p: 0.85 for p in players}
+
+    if mode == 1:
+        optimal = xT_based_goal_pathfinding(G, origin)
+        print(f"\n⚽ Top xT Paths dari {origin} ({team_name}):")
+        for i, res in enumerate(optimal, 1):
+            print(f"\nPath {i}: {' → '.join(res['path'])}\nTotal xT: {res['total_xT']:.4f}")
+    else:
+        optimal = safe_dangerous_goal_path(G, origin, positions, accuracy)
+        print(f"\n🛡️  Top Safe Goal Paths dari {origin} ({team_name}):")
+        for i, res in enumerate(optimal, 1):
+            print(f"\nPath {i}: {' → '.join(res['path'])}")
+            print(f"Total xT: {res['xT']:.4f}, Cost: {res['cost']:.4f}, xT/Cost: {res['xT_per_cost']:.4f}")
 
     if optimal:
         print("\n🔍 Visualisasi Path 1 (Animasi):")
-        animate_path(G, positions, optimal[0]['path'], interval=800, title=f"Top xT Path dari {origin} (Total {optimal[0]['total_xT']:.3f}) (Animasi)")
+        animate_path(G, positions, optimal[0]['path'], interval=800,
+                     title=f"Top Path dari {origin} (Visualisasi)")
 
 if __name__ == "__main__":
     main()
