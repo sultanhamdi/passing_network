@@ -13,14 +13,14 @@ import matplotlib.animation as animation
 
 def get_url_mapping():
     return {
-        "Barcelona vs Atletico Madrid": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773372.json",
-        "Barcelona vs Real Madrid": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773585.json",
-        "Barcelona vs Sevilla": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773672.json",
-        "Spain vs Russia": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/7582.json",
-        "Argentina vs France" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3869685.json",
-        "Liverpool vs Milan" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/2302764.json",
-        "Arsenal vs Manchester United":"https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3749246.json",
-        "Arsenal vs Leicester City" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3749257.json"
+        "Atletico Madrid vs Barcelona (2020/21 La Liga)": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773372.json",
+        "Barcelona vs Real Madrid (2020/21 La Liga)": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773585.json",
+        "Barcelona vs Sevilla (2020/21 La Liga)": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3773672.json",
+        "Spain vs Russia (2018 World Cup RO16)": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/7582.json",
+        "Argentina vs France (2022 World Cup Final)": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3869685.json",
+        "Liverpool vs Milan (2005 UCL Final)": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/2302764.json",
+        "Manchester United vs Arsenal (2003/04 Premier League)": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3749246.json",
+        "Arsenal vs Leicester City (2003/04 Premier League)": "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3749257.json"
     }
 
 def load_event_data_from_url(url):
