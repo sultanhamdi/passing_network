@@ -200,7 +200,9 @@ def animate_path(G, positions, path, interval=800, title='Top xT Path (Animasi)'
         if kind == 'node':
             x, y = positions[item]
             artist = ax.scatter(x, y, s=1200, facecolor="#3333C8", edgecolors="black", linewidths=2, zorder=4)
-            text = ax.text(x, y, item.split()[0], ha='center', va='center', color='white', fontsize=8, fontweight='bold', zorder=5)
+            name_parts = item.split()
+            last_name = name_parts[-1] if len(name_parts) > 0 else item
+            text = ax.text(x, y, last_name, ha='center', va='center', color='white', fontsize=8, fontweight='bold', zorder=5)
             artists.extend([artist, text])
         else:
             u, v = item

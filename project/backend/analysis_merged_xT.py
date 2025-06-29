@@ -192,8 +192,10 @@ def draw_network(G, positions, title="Passing Network", figsize=(12, 8)):
                    edgecolors=outline_color,
                    linewidths=outline_width,
                    zorder=3)
+        name_parts = player.split()
+        last_name = name_parts[-1] if len(name_parts) > 0 else player
         ax.text(x, y,
-                player.split()[0],
+                last_name,
                 ha='center', va='center',
                 fontsize=8, fontweight='bold',
                 color='white',
@@ -292,9 +294,11 @@ def animate_shortest_path(G, positions, path, interval=800, figsize=(12, 8)):
                 linewidths=2,
                 zorder=4
             )
+            name_parts = item.split()
+            last_name = name_parts[-1] if len(name_parts) > 0 else item
             text = ax.text(
                 x, y,
-                item.split()[0],
+                last_name,
                 ha='center', va='center',
                 fontsize=8, fontweight='bold',
                 color='white',
