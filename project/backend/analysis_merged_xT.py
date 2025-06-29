@@ -20,7 +20,7 @@ def get_url_mapping():
         "Argentina vs France" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3869685.json",
         "Liverpool vs Milan" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/2302764.json",
         "Arsenal vs Manchester United":"https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3749246.json",
-        "Arsenal vs Leicster City" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3749257.json"
+        "Arsenal vs Leicester City" : "https://huggingface.co/datasets/sultanhamdi/passnet/resolve/main/3749257.json"
     }
 
 def load_event_data_from_url(url):
@@ -76,7 +76,6 @@ def compute_pass_xT_gain_avg(events, starting_players, team_name="Barcelona"):
                 xT_avg[passer][receiver] = xT_total[passer][receiver] / count
     return xT_avg
 
-
 def build_passing_graph_with_xt(events, starting_players, team_name="Barcelona"):
     xT_avg = compute_pass_xT_gain_avg(events, starting_players, team_name)
     location_data = defaultdict(list)
@@ -122,12 +121,18 @@ def build_passing_graph_with_xt(events, starting_players, team_name="Barcelona")
             )
             if count == 0:
                 continue
-
+            
+            # Graph builder
             basic_g.add_edge(passer, receiver, weight=count)
             if avg_xt > 0:
                 attack_g.add_edge(passer, receiver, weight=avg_xt)
             else:
                 defense_g.add_edge(passer, receiver, weight=abs(avg_xt))
+
+            # Potential graph builder
+            # basic_g.add_edge(passer, receiver, weight=count)
+            # attack_g.add_edge(passer, receiver, weight=avg_xt)
+            # defense_g.add_edge(passer, receiver, weight=(avg_xt * -1))
 
     return basic_g, attack_g, defense_g, positions
 
@@ -199,15 +204,7 @@ def draw_network(G, positions, title="Passing Network", figsize=(12, 8)):
     # plt.show()
     return fig
 
-
 def draw_shortest_path(G, positions, path, title="Shortest Path", figsize=(12, 8)):
-    """
-    Visualisasi snapshot jalur terpendek:
-    G         : networkx.DiGraph (berisi atribut 'weight')
-    positions : dict pemain -> (x,y)
-    path      : list node berurutan [source, ..., target]
-    title     : judul plot
-    """
     from mplsoccer import Pitch
     from matplotlib.patches import FancyArrowPatch
 
