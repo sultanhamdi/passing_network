@@ -92,7 +92,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearDisplays();
     loadPlayers();
     document.querySelectorAll(
-      '.mode-buttons button, #runShortest, #runXtGoal, #runSafeDanger, #runCommunities'
+      '.mode-buttons button, #runShortest, #runXtGoal, #runSafeDanger, #runCommunities, #runCommunitiesImage'
     ).forEach(b => b.disabled = false);
   };
 
@@ -153,13 +153,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
-  document.getElementById('runCommunities').onclick = async () => {
+  document.getElementById('runCommunitiesImage').onclick = async () => {
+    clearDisplays();
     const m = encodeURIComponent(matchSel.value);
     const t = encodeURIComponent(teamSel.value);
     if (!m || !t) return;
-    const res = await fetchJSON(
-      `${API}/analysis/communities?match=${m}&team=${t}`
-    );
-    alert(JSON.stringify(res, null, 2));
+
+    try {
+      const res = await fetch(`${API}/analysis/communities-image?match=${m}&team=${t}`);
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err);
+      }
+      const blob = await res.blob();
+      const img  = document.getElementById('commImage');
+      img.src    = URL.createObjectURL(blob);
+      img.style.display = 'block';
+    } catch (err) {
+      alert('Gagal memuat komunitas: ' + err.message);
+    }
   };
+
 });

@@ -19,7 +19,10 @@ from analysis import (
     build_weighted_graph,
     xT_based_goal_pathfinding,
     safe_dangerous_goal_path,
-    animate_path
+    animate_path,
+    build_basic_graph_and_positions,
+    detect_communities,
+    visualize_communities
 )
 
 app = Flask(__name__)
@@ -200,6 +203,35 @@ def safe_dangerous_path_gif():
         buf = BytesIO(tmp_path.read_bytes())
         buf.seek(0)
         return send_file(buf, mimetype='image/gif')
+    
+@app.route('/analysis/communities', methods=['GET'])
+def communities():
+    match = request.args.get('match')
+    team  = request.args.get('team')
+    urls  = get_url_mapping()
+    if not match or match not in urls or not team:
+        return jsonify({'error': 'Missing parameters'}), 400
+    events        = load_event_data_from_url(urls[match])
+    G, positions  = build_basic_graph_and_positions(events, team)
+    partition     = detect_communities(G)
+    return jsonify(partition)
+
+@app.route('/analysis/communities-image', methods=['GET'])
+def communities_image():
+    match = request.args.get('match')
+    team  = request.args.get('team')
+    urls  = get_url_mapping()
+    if not match or match not in urls or not team:
+        return 'Missing parameters', 400
+    events        = load_event_data_from_url(urls[match])
+    G, positions  = build_basic_graph_and_positions(events, team)
+    partition     = detect_communities(G)
+    fig           = visualize_communities(G, positions, partition, title=f"{team} Communities")
+    buf = BytesIO()
+    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+    return send_file(buf, mimetype='image/png')
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

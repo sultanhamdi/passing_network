@@ -441,6 +441,79 @@ def animate_path(G, positions, path, interval=800, title='Top xT Path (Animasi)'
     plt.tight_layout()
     return ani
 
+def build_basic_graph_and_positions(events, team_name):
+    G = nx.DiGraph()
+    positions_data = defaultdict(list)
+
+    for e in events:
+        if e.get("type", {}).get("name") != "Pass":
+            continue
+        if e.get("team", {}).get("name") != team_name:
+            continue
+        p = e.get("pass", {})
+        # hanya operan sukses
+        if "recipient" not in p or "outcome" in p:
+            continue
+        passer = e["player"]["name"]
+        receiver = p["recipient"]["name"]
+        # hitung frekuensi
+        if G.has_edge(passer, receiver):
+            G[passer][receiver]["weight"] += 1
+        else:
+            G.add_edge(passer, receiver, weight=1)
+        # simpan lokasi
+        loc = e.get("location")
+        if loc and len(loc) >= 2:
+            positions_data[passer].append(tuple(loc))
+        end_loc = p.get("end_location")
+        if end_loc and len(end_loc) >= 2:
+            positions_data[receiver].append(tuple(end_loc))
+
+    # hitung posisi rata-rata
+    positions = {}
+    for player, locs in positions_data.items():
+        if not locs:
+            continue
+        xs, ys = zip(*locs)
+        positions[player] = (sum(xs) / len(xs), sum(ys) / len(ys))
+
+    return G, positions
+
+
+def detect_communities(G):
+    from community import community_louvain
+    return community_louvain.best_partition(G.to_undirected())
+
+
+def visualize_communities(G, positions, partition, title="Community Detection", figsize=(12, 8)):
+    pitch = Pitch(pitch_type='statsbomb', pitch_color='white', line_color='black')
+    fig, ax = pitch.draw(figsize=figsize)
+
+    # gambar semua edge
+    weights = nx.get_edge_attributes(G, 'weight')
+    max_w = max(weights.values()) if weights else 1
+    for (u, v), w in weights.items():
+        if u in positions and v in positions:
+            x1, y1 = positions[u]
+            x2, y2 = positions[v]
+            thick = 1 + (w / max_w) * 4  # rentang 1–5
+            ax.plot([x1, x2], [y1, y2], color='grey', linewidth=thick, alpha=0.5, zorder=1)
+
+    # siapkan colormap
+    communities = sorted(set(partition.values()))
+    cmap = plt.cm.get_cmap('tab10', len(communities))
+
+    # gambar node per komunitas
+    for node, comm_id in partition.items():
+        if node in positions:
+            x, y = positions[node]
+            color = cmap(communities.index(comm_id))
+            ax.scatter(x, y, s=300, facecolor=color, edgecolors='black', linewidths=1.5, zorder=2)
+            ax.text(x, y, node.split()[0], ha='center', va='center', color='white', fontsize=8, fontweight='bold', zorder=3)
+
+    ax.set_title(title, fontsize=16)
+    plt.tight_layout()
+    return fig
 
 def analyze_centralities(G):
     return {

@@ -57,7 +57,8 @@ h1 {
 #graphImage,
 #animImage,
 #xtAnimImage,
-#sdAnimImage {
+#sdAnimImage,
+#commImage {
   width: 100%;
   height: auto;
   display: none;

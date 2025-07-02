@@ -54,8 +54,9 @@
     </div>
 
     <div class="analysis-section">
-      <h3>Communities</h3>
-      <button id="runCommunities" disabled>Show Communities</button>
+      <h3>Community Detection</h3>
+      <label for="commButton">Tampilkan Komunitas:</label>
+      <button id="runCommunitiesImage" disabled>Run</button>
     </div>
   </div>
 
@@ -64,6 +65,7 @@
     <img id="animImage" alt="Shortest-Path Animation" />
     <img id="xtAnimImage" alt="xT Goal Path Animation" />
     <img id="sdAnimImage" alt="Safe/Dangerous Path Animation" />
+     <img id="commImage" alt="Community Detection Visualization" style="display:none;" />
   </div>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>
