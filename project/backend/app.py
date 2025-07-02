@@ -15,7 +15,10 @@ from analysis import (
     build_passing_graph_with_xt,
     draw_network,
     get_shortest_path,
-    animate_shortest_path
+    animate_shortest_path,
+    build_weighted_graph,
+    xT_based_goal_pathfinding,
+    animate_path
 )
 
 # Import PillowWriter for GIF output
@@ -147,6 +150,64 @@ def shortest_path_gif():
     except Exception as e:
         print(type(e), e)
         return jsonify({'error': str(e)}), 500
+    
+@app.route('/analysis/xt-goal-paths', methods=['GET'])
+def xt_goal_paths():
+    match      = request.args.get('match')
+    team       = request.args.get('team')
+    origin     = request.args.get('origin')
+    max_passes = int(request.args.get('max_passes', 3))
+    urls       = get_url_mapping()
+
+    if not all([match, team, origin]) or match not in urls:
+        return jsonify({'error': 'Missing parameters'}), 400
+
+    events        = load_event_data_from_url(urls[match])
+    starting_info = extract_all_starting_players(events)
+    starting_players = starting_info.get(team)
+    if not starting_players or origin not in starting_players:
+        return jsonify({'error': 'Origin player not found'}), 404
+
+    G_w, positions_w = build_weighted_graph(events, starting_players, team)
+    paths = xT_based_goal_pathfinding(G_w, origin, max_passes)
+    return jsonify(paths)
+
+@app.route('/analysis/xt-goal-path-gif', methods=['GET'])
+def xt_goal_path_gif():
+    match      = request.args.get('match')
+    team       = request.args.get('team')
+    origin     = request.args.get('origin')
+    index      = int(request.args.get('index', 0))
+    max_passes = int(request.args.get('max_passes', 3))
+    urls       = get_url_mapping()
+
+    if not all([match, team, origin]) or match not in urls:
+        return jsonify({'error': 'Missing parameters'}), 400
+
+    events        = load_event_data_from_url(urls[match])
+    starting_info = extract_all_starting_players(events)
+    starting_players = starting_info.get(team)
+    if not starting_players or origin not in starting_players:
+        return jsonify({'error': 'Origin player not found'}), 404
+
+    G_w, positions_w = build_weighted_graph(events, starting_players, team)
+    paths = xT_based_goal_pathfinding(G_w, origin, max_passes)
+    if not paths or index < 0 or index >= len(paths):
+        return jsonify({'error': 'Invalid path index'}), 404
+
+    selected_path = paths[index]['path']
+    ani = animate_path(G_w, positions_w, selected_path)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir) / f"xt_path_{index}.gif"
+        writer   = PillowWriter(fps=1)
+        ani.save(str(tmp_path), writer=writer)
+        plt.close(ani._fig)
+        gif_bytes = tmp_path.read_bytes()
+        buf = BytesIO(gif_bytes)
+        buf.seek(0)
+        return send_file(buf, mimetype='image/gif')
+
 
 
 if __name__ == '__main__':

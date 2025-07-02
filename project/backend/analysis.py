@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 from collections import defaultdict
+from heapq import heappush, heappop
 from mplsoccer import Pitch
 from matplotlib.patches import FancyArrowPatch
 import matplotlib.animation as animation
@@ -339,6 +340,82 @@ def get_shortest_path(G, source, target, positions, accuracy):
         return path, cost
     except nx.NetworkXNoPath:
         return [], float('inf')
+    
+# Build weighted graph for pathfinding
+def build_weighted_graph(events, starting_players, team_name):
+    xT_matrix = np.load("xT_map.npy")
+    player_data = defaultdict(lambda: {"positions": [], "xG": 0, "shots": 0})
+    for e in events:
+        if e.get("team", {}).get("name") != team_name: continue
+        player = e.get("player", {}).get("name")
+        if player not in starting_players: continue
+        loc = e.get("location")
+        if loc and len(loc)>=2:
+            player_data[player]["positions"].append(loc)
+        if e.get("type", {}).get("name") == "Shot":
+            player_data[player]["xG"] += e.get("shot",{}).get("statsbomb_xg",0)
+            player_data[player]["shots"] += 1
+    positions = {}
+    xG_rates = {}
+    for p in starting_players:
+        data = player_data[p]
+        if data["positions"]:
+            xs=[pos[0] for pos in data["positions"]]; ys=[pos[1] for pos in data["positions"]]
+            positions[p] = (np.mean(xs), np.mean(ys))
+        if data["shots"]>0:
+            xG_rates[p] = data["xG"]/data["shots"]
+    xT_avg = compute_pass_xT_gain_avg(events, starting_players, team_name)
+    G = nx.DiGraph()
+    for u, recs in xT_avg.items():
+        for v, avg_xt in recs.items():
+            grid = get_grid_cell(*positions.get(v,(0,0)))
+            pot = 0.2*xT_matrix[grid] + 0.1*xG_rates.get(v,0)
+            weight = avg_xt + pot
+            G.add_edge(u, v, weight=weight)
+    return G, positions
+
+# Find top optimal xT paths
+def xT_based_goal_pathfinding(G, origin_player, max_passes=3):
+    heap=[]
+    heappush(heap,(0, origin_player, [origin_player], 0))
+    results=[]
+    while heap:
+        neg_val, curr, path, depth = heappop(heap)
+        val = -neg_val
+        if depth>max_passes: continue
+        if depth>0 and val>0: results.append((path, val))
+        for nbr in G.successors(curr):
+            if nbr in path: continue
+            w = G[curr][nbr]['weight']
+            heappush(heap, (-(val+w), nbr, path+[nbr], depth+1))
+    top = sorted(results, key=lambda x: -x[1])[:5]
+    return [{"path":p, "total_xT":v} for p, v in top]
+
+# Animate a given path on the pitch
+def animate_path(G, positions, path, interval=800, title='Top xT Path (Animasi)', figsize=(12,8)):
+    pitch=Pitch(pitch_type='statsbomb', pitch_color='white', line_color='black')
+    fig, ax = pitch.draw(figsize=figsize)
+    steps=[]
+    for i, p in enumerate(path):
+        steps.append(('node', p))
+        if i< len(path)-1: steps.append(('edge', (p, path[i+1])))
+    artists=[]
+    def update(frame):
+        kind, itm = steps[frame]
+        if kind=='node':
+            x,y=positions.get(itm,(60,40))
+            dot=ax.scatter(x,y, s=1200, facecolor='#005f73', edgecolors='black', linewidths=2, zorder=4)
+            txt=ax.text(x,y,itm.split()[0], ha='center', va='center', color='white', fontsize=9, fontweight='bold', zorder=5)
+            artists.extend([dot, txt])
+        else:
+            u,v=itm; x1,y1=positions.get(u,(60,40)); x2,y2=positions.get(v,(60,40))
+            ln,=ax.plot([x1,x2],[y1,y2], linewidth=4, alpha=0.8, zorder=3)
+            artists.append(ln)
+        return artists
+    ani=animation.FuncAnimation(fig, update, frames=len(steps), interval=interval, blit=True, repeat=False)
+    ax.set_title(title, fontsize=16)
+    plt.tight_layout()
+    return ani
 
 
 def analyze_centralities(G):

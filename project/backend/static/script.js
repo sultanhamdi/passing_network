@@ -18,6 +18,7 @@ async function initMatches() {
 function clearDisplays() {
   document.getElementById('graphImage').style.display = 'none';
   document.getElementById('animImage').style.display = 'none';
+  document.getElementById('xtAnimImage').style.display = 'none';
 }
 
 function loadGraphImage(mode) {
@@ -99,13 +100,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
   document.getElementById('runXtGoal').onclick = async () => {
+    clearDisplays();
     const m = encodeURIComponent(matchSel.value);
     const t = encodeURIComponent(teamSel.value);
-    const s = encodeURIComponent(document.getElementById('xtSrcSelect').value);
-    if (!m || !t || !s) return;
-    const res = await fetchJSON(`${API}/analysis/xt-goal-path?match=${m}&team=${t}&src=${s}`);
-    alert(JSON.stringify(res, null, 2));
-  };
+    const o = encodeURIComponent(document.getElementById('xtSrcSelect').value);
+    if (!m || !t || !o) return;
+    // 1) request JSON top paths
+    const paths = await fetchJSON(
+      `${API}/analysis/xt-goal-paths?match=${m}&team=${t}&origin=${o}`
+    );
+    console.log('xT paths:', paths);
+    // 2) fetch GIF for the first path
+    const gifRes = await fetch(
+      `${API}/analysis/xt-goal-path-gif?match=${m}&team=${t}&origin=${o}&index=0`
+    );
+    if (!gifRes.ok) throw new Error('Gagal load GIF xT-path');
+    const blob = await gifRes.blob();
+    const img = document.getElementById('xtAnimImage');
+    img.src = URL.createObjectURL(blob);
+    img.style.display = 'block';
+};
 
 
   document.getElementById('runCommunities').onclick = async () => {
