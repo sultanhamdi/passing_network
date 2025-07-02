@@ -18,11 +18,9 @@ from analysis import (
     animate_shortest_path,
     build_weighted_graph,
     xT_based_goal_pathfinding,
+    safe_dangerous_goal_path,
     animate_path
 )
-
-# Import PillowWriter for GIF output
-from matplotlib.animation import PillowWriter
 
 app = Flask(__name__)
 CORS(app)
@@ -44,8 +42,7 @@ def teams():
         return jsonify({'error': 'Match not found'}), 404
     events = load_event_data_from_url(urls[match])
     starting_info = extract_all_starting_players(events)
-    teams = sorted(starting_info.keys())
-    return jsonify(teams)
+    return jsonify(sorted(starting_info.keys()))
 
 @app.route('/players', methods=['GET'])
 def players():
@@ -56,8 +53,7 @@ def players():
         return jsonify({'error': 'Match or team not found'}), 404
     events = load_event_data_from_url(urls[match])
     starting_info = extract_all_starting_players(events)
-    players_list = list(starting_info.get(team, []))
-    return jsonify(sorted(players_list))
+    return jsonify(sorted(starting_info.get(team, [])))
 
 @app.route('/graph-image', methods=['GET'])
 def graph_image():
@@ -70,16 +66,9 @@ def graph_image():
     events = load_event_data_from_url(urls[match])
     starting_info = extract_all_starting_players(events)
     basic_g, attack_g, defense_g, positions, player_team = build_passing_graph_with_xt(events, starting_info)
-    if mode == 'attacking':
-        G = attack_g
-    elif mode == 'defensive':
-        G = defense_g
-    else:
-        G = basic_g
+    G = {'default': basic_g, 'attacking': attack_g, 'defensive': defense_g}.get(mode, basic_g)
     fig = draw_network(
-        G,
-        positions,
-        player_team,
+        G, positions, player_team,
         selected_team=team,
         title=f"{team} - {mode.title()} Passing Network"
     )
@@ -96,61 +85,31 @@ def shortest_path_gif():
     source = request.args.get('src')
     target = request.args.get('tgt')
     urls   = get_url_mapping()
-
-    # 1) Validasi parameter
     if not all([match, team, source, target]) or match not in urls:
         return jsonify({'error': 'Missing parameters'}), 400
-
     try:
-        # 2) Muat data dan bangun graph
-        events        = load_event_data_from_url(urls[match])
+        events = load_event_data_from_url(urls[match])
         starting_info = extract_all_starting_players(events)
         basic_g, _, _, positions, _ = build_passing_graph_with_xt(events, starting_info)
-        G = basic_g
-
-        # 3) Guard: pastikan node ada di graph
-        if source not in G or target not in G:
-            return jsonify({'error': f'{source} or {target} not in graph'}), 404
-
-        # 4) Hitung shortest path
+        if source not in basic_g or target not in basic_g:
+            return jsonify({'error': 'Source or target not in graph'}), 404
         accuracy = {}
-        path, total_cost = get_shortest_path(G, source, target, positions, accuracy)
-        if not path:
-            return jsonify({'error': 'No path found'}), 404
-
-        # 5) Fallback posisi untuk setiap node
+        path, _ = get_shortest_path(basic_g, source, target, positions, accuracy)
         default_pos = (60, 40)
         for node in path:
             positions.setdefault(node, default_pos)
-
-        # 6) Buat animasi
-        ani = animate_shortest_path(G, positions, path)
-
-        # 7) Simpan ke file sementara di temp dir
+        ani = animate_shortest_path(basic_g, positions, path)
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir) / "shortest_path.gif"
-            writer   = PillowWriter(fps=1)
-            ani.save(str(tmp_path), writer=writer)
+            ani.save(str(tmp_path), writer=PillowWriter(fps=1))
             plt.close(ani._fig)
-
-            # 8) Baca file GIF ke memori
-            gif_bytes = tmp_path.read_bytes()
-            buf = BytesIO(gif_bytes)
+            buf = BytesIO(tmp_path.read_bytes())
             buf.seek(0)
-
-            # 9) Kirim GIF
             return send_file(buf, mimetype='image/gif')
-
-    except (nx.NetworkXNoPath, nx.NodeNotFound) as e:
-        return jsonify({'error': str(e)}), 404
-
-    except KeyError as e:
-        return jsonify({'error': f'Posisi untuk pemain {e.args[0]} tidak tersedia'}), 500
-
     except Exception as e:
-        print(type(e), e)
         return jsonify({'error': str(e)}), 500
-    
+
+# xT-based Goal Pathfinding
 @app.route('/analysis/xt-goal-paths', methods=['GET'])
 def xt_goal_paths():
     match      = request.args.get('match')
@@ -158,17 +117,13 @@ def xt_goal_paths():
     origin     = request.args.get('origin')
     max_passes = int(request.args.get('max_passes', 3))
     urls       = get_url_mapping()
-
     if not all([match, team, origin]) or match not in urls:
         return jsonify({'error': 'Missing parameters'}), 400
-
-    events        = load_event_data_from_url(urls[match])
-    starting_info = extract_all_starting_players(events)
-    starting_players = starting_info.get(team)
-    if not starting_players or origin not in starting_players:
+    events   = load_event_data_from_url(urls[match])
+    starting = extract_all_starting_players(events).get(team, [])
+    if origin not in starting:
         return jsonify({'error': 'Origin player not found'}), 404
-
-    G_w, positions_w = build_weighted_graph(events, starting_players, team)
+    G_w, positions = build_weighted_graph(events, starting, team)
     paths = xT_based_goal_pathfinding(G_w, origin, max_passes)
     return jsonify(paths)
 
@@ -180,35 +135,71 @@ def xt_goal_path_gif():
     index      = int(request.args.get('index', 0))
     max_passes = int(request.args.get('max_passes', 3))
     urls       = get_url_mapping()
-
     if not all([match, team, origin]) or match not in urls:
         return jsonify({'error': 'Missing parameters'}), 400
-
-    events        = load_event_data_from_url(urls[match])
-    starting_info = extract_all_starting_players(events)
-    starting_players = starting_info.get(team)
-    if not starting_players or origin not in starting_players:
+    events   = load_event_data_from_url(urls[match])
+    starting = extract_all_starting_players(events).get(team, [])
+    if origin not in starting:
         return jsonify({'error': 'Origin player not found'}), 404
-
-    G_w, positions_w = build_weighted_graph(events, starting_players, team)
+    G_w, positions = build_weighted_graph(events, starting, team)
     paths = xT_based_goal_pathfinding(G_w, origin, max_passes)
-    if not paths or index < 0 or index >= len(paths):
+    if index < 0 or index >= len(paths):
         return jsonify({'error': 'Invalid path index'}), 404
-
-    selected_path = paths[index]['path']
-    ani = animate_path(G_w, positions_w, selected_path)
-
+    ani = animate_path(G_w, positions, paths[index]['path'])
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir) / f"xt_path_{index}.gif"
-        writer   = PillowWriter(fps=1)
-        ani.save(str(tmp_path), writer=writer)
+        ani.save(str(tmp_path), writer=PillowWriter(fps=1))
         plt.close(ani._fig)
-        gif_bytes = tmp_path.read_bytes()
-        buf = BytesIO(gif_bytes)
+        buf = BytesIO(tmp_path.read_bytes())
         buf.seek(0)
         return send_file(buf, mimetype='image/gif')
 
+# Safe/Dangerous Goal Pathfinding
+@app.route('/analysis/safe-dangerous-paths', methods=['GET'])
+def safe_dangerous_paths():
+    match      = request.args.get('match')
+    team       = request.args.get('team')
+    origin     = request.args.get('origin')
+    max_passes = int(request.args.get('max_passes', 3))
+    top_k      = int(request.args.get('top_k', 5))
+    urls       = get_url_mapping()
+    if not all([match, team, origin]) or match not in urls:
+        return jsonify({'error': 'Missing parameters'}), 400
+    events   = load_event_data_from_url(urls[match])
+    starting = extract_all_starting_players(events).get(team, [])
+    if origin not in starting:
+        return jsonify({'error': 'Origin player not found'}), 404
+    G_w, positions = build_weighted_graph(events, starting, team)
+    paths = safe_dangerous_goal_path(G_w, origin, positions, {}, max_passes=max_passes, top_k=top_k)
+    return jsonify(paths)
 
+@app.route('/analysis/safe-dangerous-path-gif', methods=['GET'])
+def safe_dangerous_path_gif():
+    match      = request.args.get('match')
+    team       = request.args.get('team')
+    origin     = request.args.get('origin')
+    index      = int(request.args.get('index', 0))
+    max_passes = int(request.args.get('max_passes', 3))
+    top_k      = int(request.args.get('top_k', 5))
+    urls       = get_url_mapping()
+    if not all([match, team, origin]) or match not in urls:
+        return jsonify({'error': 'Missing parameters'}), 400
+    events   = load_event_data_from_url(urls[match])
+    starting = extract_all_starting_players(events).get(team, [])
+    if origin not in starting:
+        return jsonify({'error': 'Origin player not found'}), 404
+    G_w, positions = build_weighted_graph(events, starting, team)
+    paths = safe_dangerous_goal_path(G_w, origin, positions, {}, max_passes=max_passes, top_k=top_k)
+    if index < 0 or index >= len(paths):
+        return jsonify({'error': 'Invalid path index'}), 404
+    ani = animate_path(G_w, positions, paths[index]['path'])
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir) / f"sd_path_{index}.gif"
+        ani.save(str(tmp_path), writer=PillowWriter(fps=1))
+        plt.close(ani._fig)
+        buf = BytesIO(tmp_path.read_bytes())
+        buf.seek(0)
+        return send_file(buf, mimetype='image/gif')
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

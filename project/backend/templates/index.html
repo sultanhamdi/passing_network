@@ -47,6 +47,13 @@
     </div>
 
     <div class="analysis-section">
+      <h3>Safe/Dangerous Goal Path</h3>
+      <label for="sdSrcSelect">Dari:</label>
+      <select id="sdSrcSelect" disabled></select>
+      <button id="runSafeDanger" disabled>Run</button>
+    </div>
+
+    <div class="analysis-section">
       <h3>Communities</h3>
       <button id="runCommunities" disabled>Show Communities</button>
     </div>
@@ -56,6 +63,7 @@
     <img id="graphImage" alt="Passing Graph" />
     <img id="animImage" alt="Shortest-Path Animation" />
     <img id="xtAnimImage" alt="xT Goal Path Animation" />
+    <img id="sdAnimImage" alt="Safe/Dangerous Path Animation" />
   </div>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>

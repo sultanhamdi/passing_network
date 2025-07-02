@@ -391,6 +391,30 @@ def xT_based_goal_pathfinding(G, origin_player, max_passes=3):
     top = sorted(results, key=lambda x: -x[1])[:5]
     return [{"path":p, "total_xT":v} for p, v in top]
 
+def safe_dangerous_goal_path(G, origin_player, positions, accuracy, max_passes=3, top_k=5):
+    G = compute_realistic_cost(G, positions, accuracy)
+    heap = []
+    heappush(heap, (0, 0, origin_player, [origin_player], 0))
+    results = []
+    while heap:
+        neg_score, total_cost, current, path, depth = heappop(heap)
+        score = -neg_score
+        if depth > max_passes:
+            continue
+        if score > 0 and depth > 0:
+            results.append((score, total_cost, path))
+        for nbr in G.successors(current):
+            if nbr in path:
+                continue
+            xT = G[current][nbr]['weight']
+            cost = G[current][nbr].get('cost', 1e-6)
+            new_xT = score * total_cost + xT
+            new_cost = total_cost + cost
+            new_score = new_xT / new_cost if new_cost > 0 else 0
+            heappush(heap, (-new_score, new_cost, nbr, path + [nbr], depth + 1))
+    top = sorted(results, key=lambda x: -x[0])[:top_k]
+    return [{"path": p, "xT": round(s * c, 4), "cost": round(c, 4), "xT_per_cost": round(s, 4)} for s, c, p in top]
+
 # Animate a given path on the pitch
 def animate_path(G, positions, path, interval=800, title='Top xT Path (Animasi)', figsize=(12,8)):
     pitch=Pitch(pitch_type='statsbomb', pitch_color='white', line_color='black')
