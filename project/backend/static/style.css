@@ -54,7 +54,6 @@ h1 {
   position: relative;
 }
 
-/* Gambar awalnya disembunyikan, baru ditampilkan setelah load */
 #graphImage,
 #animImage {
   width: 100%;

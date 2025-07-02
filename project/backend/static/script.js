@@ -1,27 +1,25 @@
 // static/script.js
 const API = window.location.origin;
 
-// Helper to fetch JSON from an API endpoint
+
 async function fetchJSON(path) {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`Error ${res.status}`);
   return res.json();
 }
 
-// Initialize match selector
+
 async function initMatches() {
   const sel = document.getElementById('matchSelect');
   const matches = await fetchJSON(`${API}/matches`);
   matches.forEach(m => sel.add(new Option(m, m)));
 }
 
-// Hide both graph and animation images
 function clearDisplays() {
   document.getElementById('graphImage').style.display = 'none';
   document.getElementById('animImage').style.display = 'none';
 }
 
-// Load and display the passing network image
 function loadGraphImage(mode) {
   clearDisplays();
   const match = encodeURIComponent(document.getElementById('matchSelect').value);
@@ -33,21 +31,28 @@ function loadGraphImage(mode) {
   img.onerror = () => { console.error('Failed to load graph image'); };
 }
 
-// Run and display the shortest-path animation
-function runShortest() {
+async function runShortest() {
   clearDisplays();
-  const m   = encodeURIComponent(document.getElementById('matchSelect').value);
-  const t   = encodeURIComponent(document.getElementById('teamSelect').value);
-  const s   = encodeURIComponent(document.getElementById('srcSelect').value);
-  const tgt = encodeURIComponent(document.getElementById('tgtSelect').value);
-  if (!m || !t || !s || !tgt) return;
-  const anim = document.getElementById('animImage');
-  anim.src = `${API}/analysis/shortest-path-gif?match=${m}&team=${t}&src=${s}&tgt=${tgt}`;
-  anim.onload = () => { anim.style.display = 'block'; };
-  anim.onerror = () => { console.error('Failed to load animation'); };
+  const m   = encodeURIComponent(matchSelect.value);
+  const t   = encodeURIComponent(teamSelect.value);
+  const s   = encodeURIComponent(srcSelect.value);
+  const tgt = encodeURIComponent(tgtSelect.value);
+  const url = `${API}/analysis/shortest-path-gif?match=${m}&team=${t}&src=${s}&tgt=${tgt}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const { error } = await res.json();
+      throw new Error(error || res.statusText);
+    }
+    const blob = await res.blob();
+    animImage.src = URL.createObjectURL(blob);
+    animImage.style.display = 'block';
+  } catch (err) {
+    alert('Gagal memuat animasi: ' + err.message);
+  }
 }
 
-// Populate players dropdown via API
 async function loadPlayers() {
   const match = document.getElementById('matchSelect').value;
   const team  = document.getElementById('teamSelect').value;
@@ -67,7 +72,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const matchSel = document.getElementById('matchSelect');
   const teamSel  = document.getElementById('teamSelect');
 
-  // When a match is selected, load teams
   matchSel.onchange = async () => {
     clearDisplays();
     teamSel.disabled = true;
@@ -78,7 +82,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     teamSel.disabled = false;
   };
 
-  // When a team is selected, load players and enable buttons
   teamSel.onchange = () => {
     clearDisplays();
     loadPlayers();
@@ -87,15 +90,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     ).forEach(b => b.disabled = false);
   };
 
-  // Mode buttons
   document.querySelectorAll('.mode-buttons button').forEach(btn => {
     btn.onclick = () => loadGraphImage(btn.dataset.mode);
   });
 
-  // Shortest-path
+
   document.getElementById('runShortest').onclick = runShortest;
 
-  // xT Goal Path
+
   document.getElementById('runXtGoal').onclick = async () => {
     const m = encodeURIComponent(matchSel.value);
     const t = encodeURIComponent(teamSel.value);
@@ -105,7 +107,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     alert(JSON.stringify(res, null, 2));
   };
 
-  // Communities
+
   document.getElementById('runCommunities').onclick = async () => {
     const m = encodeURIComponent(matchSel.value);
     const t = encodeURIComponent(teamSel.value);

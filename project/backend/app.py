@@ -3,17 +3,23 @@ from flask_cors import CORS
 from io import BytesIO
 import matplotlib.pyplot as plt
 import networkx as nx
+from matplotlib.animation import PillowWriter
+import tempfile
+from pathlib import Path
 
 # Import backend logic
-from analysis_merged_xT import (
+from analysis import (
     get_url_mapping,
     load_event_data_from_url,
     extract_all_starting_players,
     build_passing_graph_with_xt,
     draw_network,
     get_shortest_path,
-    draw_shortest_path
+    animate_shortest_path
 )
+
+# Import PillowWriter for GIF output
+from matplotlib.animation import PillowWriter
 
 app = Flask(__name__)
 CORS(app)
@@ -82,38 +88,66 @@ def graph_image():
 
 @app.route('/analysis/shortest-path-gif', methods=['GET'])
 def shortest_path_gif():
-    match = request.args.get('match')
-    team = request.args.get('team')
+    match  = request.args.get('match')
+    team   = request.args.get('team')
     source = request.args.get('src')
     target = request.args.get('tgt')
-    urls = get_url_mapping()
-    if not match or match not in urls or not team or not source or not target:
-        return 'Missing parameters', 400
+    urls   = get_url_mapping()
+
+    # 1) Validasi parameter
+    if not all([match, team, source, target]) or match not in urls:
+        return jsonify({'error': 'Missing parameters'}), 400
+
     try:
-        events = load_event_data_from_url(urls[match])
+        # 2) Muat data dan bangun graph
+        events        = load_event_data_from_url(urls[match])
         starting_info = extract_all_starting_players(events)
-        basic_g, _, _, positions, player_team = build_passing_graph_with_xt(events, starting_info)
-        # Filter to selected team edges
-        G_team = nx.DiGraph()
-        for u, v, data in basic_g.edges(data=True):
-            if data.get('team') == team:
-                G_team.add_edge(u, v, **data)
-        # Compute shortest path
-        accuracy = {p: 1.0 for p in starting_info.get(team, [])}
-        path, cost = get_shortest_path(G_team, source, target, positions, accuracy)
+        basic_g, _, _, positions, _ = build_passing_graph_with_xt(events, starting_info)
+        G = basic_g
+
+        # 3) Guard: pastikan node ada di graph
+        if source not in G or target not in G:
+            return jsonify({'error': f'{source} or {target} not in graph'}), 404
+
+        # 4) Hitung shortest path
+        accuracy = {}
+        path, total_cost = get_shortest_path(G, source, target, positions, accuracy)
         if not path:
-            return 'No path found', 404
-        fig = draw_shortest_path(G_team, positions, path, title=f"{team} Shortest Path")
-        buf = BytesIO()
-        fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-        plt.close(fig)
-        buf.seek(0)
-        response = send_file(buf, mimetype='image/png')
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        return response
+            return jsonify({'error': 'No path found'}), 404
+
+        # 5) Fallback posisi untuk setiap node
+        default_pos = (60, 40)
+        for node in path:
+            positions.setdefault(node, default_pos)
+
+        # 6) Buat animasi
+        ani = animate_shortest_path(G, positions, path)
+
+        # 7) Simpan ke file sementara di temp dir
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir) / "shortest_path.gif"
+            writer   = PillowWriter(fps=1)
+            ani.save(str(tmp_path), writer=writer)
+            plt.close(ani._fig)
+
+            # 8) Baca file GIF ke memori
+            gif_bytes = tmp_path.read_bytes()
+            buf = BytesIO(gif_bytes)
+            buf.seek(0)
+
+            # 9) Kirim GIF
+            return send_file(buf, mimetype='image/gif')
+
+    except (nx.NetworkXNoPath, nx.NodeNotFound) as e:
+        return jsonify({'error': str(e)}), 404
+
+    except KeyError as e:
+        return jsonify({'error': f'Posisi untuk pemain {e.args[0]} tidak tersedia'}), 500
+
     except Exception as e:
-        app.logger.exception("Error generating shortest-path")
-        return str(e), 500
+        print(type(e), e)
+        return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
